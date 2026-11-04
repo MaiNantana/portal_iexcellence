@@ -18,7 +18,13 @@ const eslintConfig = [
       "out/**",
       "build/**",
       "next-env.d.ts",
+      "iisnode/**",
     ],
+  },
+  {
+    // iisnode entry point: loaded as plain CommonJS.
+    files: ["server.js"],
+    rules: { "@typescript-eslint/no-require-imports": "off" },
   },
 ];
 
