@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { connectHr, createNews, deleteLink, deleteNews, inviteMember, removeMember, revokeInvitation, setMemberRole, setSystemConnected } from "@/app/actions";
+import { listHrDatabases } from "@/app/hr-actions";
+import { HrConnectForm } from "@/components/HrConnectForm";
+import { createNews, deleteLink, deleteNews, inviteMember, removeMember, revokeInvitation, setMemberRole, setSystemConnected } from "@/app/actions";
 import {
   addDomain,
   decideJoinRequest,
@@ -241,13 +243,15 @@ async function LinksTab({ slug, orgId }: { slug: string; orgId: string }) {
   );
 }
 
-function ConnectionsTab({
+async function ConnectionsTab({
   slug,
   org,
 }: {
   slug: string;
   org: { hrEnabled: boolean; hrBaseUrl: string | null; taskEnabled: boolean };
 }) {
+  const hrUrl = org.hrBaseUrl ?? `https://hr.iexcellence.net/${slug}`;
+  const databases = org.hrEnabled ? [] : await listHrDatabases(slug, hrUrl);
   const status = (on: boolean) => <span className={`chip ${on ? "" : "gray"}`}>{on ? "เชื่อมต่อแล้ว" : "ยังไม่เชื่อม"}</span>;
   const disconnect = (system: "hr" | "task") => (
     <form action={setSystemConnected.bind(null, slug, system, false)}>
@@ -277,12 +281,7 @@ function ConnectionsTab({
         {org.hrEnabled ? (
           disconnect("hr")
         ) : (
-          <ActionForm org={slug} action={connectHr} submitLabel="เชื่อมต่อ" resetOnSuccess={false}>
-            <div className="field">
-              <label htmlFor="hrBaseUrl">URL ของ HR</label>
-              <input id="hrBaseUrl" name="hrBaseUrl" type="url" required defaultValue={org.hrBaseUrl ?? `https://hr.iexcellence.net/${slug}`} />
-            </div>
-          </ActionForm>
+          <HrConnectForm slug={slug} defaultUrl={hrUrl} initialDatabases={databases} />
         )}
       </div>
     </section>

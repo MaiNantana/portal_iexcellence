@@ -128,15 +128,6 @@ export async function deleteNews(slug: string, id: string) {
   revalidatePath("/", "layout");
 }
 
-export async function connectHr(_: FormState, form: FormData): Promise<FormState> {
-  const admin = await requireAdmin(slugFrom(form));
-  const hrBaseUrl = safeHttpsUrl(form.get("hrBaseUrl") as string);
-  if (!hrBaseUrl) return { error: "URL ของ HR ต้องขึ้นต้นด้วย https://" };
-  await db.org.update({ where: { id: admin.orgId }, data: { hrEnabled: true, hrBaseUrl } });
-  revalidatePath("/", "layout");
-  return { ok: "เชื่อมต่อ HR Excellence แล้ว" };
-}
-
 export async function setSystemConnected(slug: string, system: "hr" | "task", connected: boolean) {
   const admin = await requireAdmin(slug);
   const data = system === "hr" ? { hrEnabled: connected } : { taskEnabled: connected };

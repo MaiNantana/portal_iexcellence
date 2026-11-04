@@ -2,9 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import type { FormState } from "@/app/actions";
-import { requireMember, slugFrom } from "@/lib/context";
+import { requireAdmin, requireMember, slugFrom, type Member } from "@/lib/context";
 import { db } from "@/lib/db";
-import { hrCustomer, hrDatabases, hrLogin } from "@/lib/hr";
+import { hrCustomer, hrDatabases, hrLogin, type HrDatabase } from "@/lib/hr";
+import { safeHttpsUrl } from "@/lib/portal";
 
 // Wrong HR passwords per Portal user: at most 5 per 15 minutes (single server, so in memory is enough).
 const failures = new Map<string, number[]>();
@@ -16,10 +17,8 @@ function tooManyFailures(userId: string) {
   return recent.length >= 5;
 }
 
-export async function linkHr(_: FormState, form: FormData): Promise<FormState> {
-  const member = await requireMember(slugFrom(form));
-  const { org } = member;
-  if (!org.hrEnabled || !org.hrBaseUrl) return { error: "บริษัทยังไม่ได้เชื่อมต่อ HR" };
+/** Signs in to HR with the form's database/username/password and links that HR account to the member. */
+async function verifyAndLink(member: Member, hrBaseUrl: string, form: FormData): Promise<FormState> {
   if (tooManyFailures(member.userId)) return { error: "ลองผิดหลายครั้งเกินไป กรุณารอ 15 นาที" };
 
   const user = String(form.get("hrUser") ?? "").trim();
@@ -28,7 +27,8 @@ export async function linkHr(_: FormState, form: FormData): Promise<FormState> {
 
   let token: string | null;
   try {
-    const dbs = await hrDatabases(hrCustomer(org.hrBaseUrl));
+    const dbs = await hrDatabases(hrCustomer(hrBaseUrl));
+    if (!dbs.length) return { error: "ไม่พบฐานข้อมูล HR ของบริษัทนี้ ตรวจสอบ URL ของ HR" };
     const database = dbs.find((d) => d.name === form.get("hrDb")) ?? (dbs.length === 1 ? dbs[0] : undefined);
     if (!database) return { error: "เลือกฐานข้อมูล HR" };
     token = await hrLogin(database, user, passwd);
@@ -42,17 +42,50 @@ export async function linkHr(_: FormState, form: FormData): Promise<FormState> {
   }
 
   const taken = await db.accountLink.findUnique({
-    where: { orgId_system_externalUserId: { orgId: org.id, system: "HR", externalUserId: token } },
+    where: { orgId_system_externalUserId: { orgId: member.orgId, system: "HR", externalUserId: token } },
   });
   if (taken && taken.userId !== member.userId) return { error: "บัญชี HR นี้เชื่อมกับผู้ใช้ Portal คนอื่นอยู่แล้ว ติดต่อ Admin" };
 
   await db.accountLink.upsert({
-    where: { orgId_userId_system: { orgId: org.id, userId: member.userId, system: "HR" } },
-    create: { orgId: org.id, userId: member.userId, system: "HR", externalUserId: token },
+    where: { orgId_userId_system: { orgId: member.orgId, userId: member.userId, system: "HR" } },
+    create: { orgId: member.orgId, userId: member.userId, system: "HR", externalUserId: token },
     update: { externalUserId: token, linkedAt: new Date() },
   });
+  return undefined;
+}
+
+export async function linkHr(_: FormState, form: FormData): Promise<FormState> {
+  const member = await requireMember(slugFrom(form));
+  const { org } = member;
+  if (!org.hrEnabled || !org.hrBaseUrl) return { error: "บริษัทยังไม่ได้เชื่อมต่อ HR" };
+  const failed = await verifyAndLink(member, org.hrBaseUrl, form);
+  if (failed) return failed;
   revalidatePath("/", "layout");
   return { ok: "เชื่อมบัญชี HR แล้ว" };
+}
+
+/** Admin connects HR: the URL only counts once the admin has signed in to that HR successfully. */
+export async function connectHr(_: FormState, form: FormData): Promise<FormState> {
+  const admin = await requireAdmin(slugFrom(form));
+  const hrBaseUrl = safeHttpsUrl(form.get("hrBaseUrl") as string);
+  if (!hrBaseUrl || !hrCustomer(hrBaseUrl)) return { error: "URL ของ HR ต้องเป็น https://hr.iexcellence.net/<บริษัท>" };
+  const failed = await verifyAndLink(admin, hrBaseUrl, form);
+  if (failed) return failed;
+  await db.org.update({ where: { id: admin.orgId }, data: { hrEnabled: true, hrBaseUrl } });
+  revalidatePath("/", "layout");
+  return { ok: "เชื่อมต่อ HR Excellence แล้ว" };
+}
+
+/** Databases for the HR URL the admin is typing, so the connect form can offer the right choices. */
+export async function listHrDatabases(slug: string, hrBaseUrl: string): Promise<HrDatabase[] | null> {
+  await requireAdmin(slug);
+  const url = safeHttpsUrl(hrBaseUrl);
+  if (!url || !hrCustomer(url)) return null;
+  try {
+    return (await hrDatabases(hrCustomer(url))).map((d) => ({ ...d, server: "" }));
+  } catch {
+    return null;
+  }
 }
 
 export async function unlinkHr(slug: string) {
