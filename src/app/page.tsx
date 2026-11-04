@@ -1,95 +1,27 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+import { redirect } from "next/navigation";
+import { AuthScreen } from "@/components/AuthScreen";
+import { Onboarding } from "@/components/Onboarding";
+import { currentUser, homePathFor, safeNext } from "@/lib/context";
 
-export default function Home() {
-  return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol>
-          <li>
-            Get started by editing <code>src/app/page.tsx</code>.
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+/**
+ * The only app page at the root. Signed out: global sign-in (for people who don't know their
+ * company link). Signed in: their last company, or onboarding (create / join a company).
+ * `?start=1` shows onboarding even to members, for creating or joining another company.
+ */
+export default async function RootPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string; mode?: string; error?: string; start?: string }>;
+}) {
+  const { next: rawNext, mode, error, start } = await searchParams;
+  const next = safeNext(rawNext);
+  const user = await currentUser();
 
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles.secondary}
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className={styles.footer}>
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
-  );
+  if (!user || error) {
+    return <AuthScreen mode={mode === "password" ? "password" : "signin"} next={next} loginBase="/" error={error} />;
+  }
+  if (next !== "/") redirect(next);
+  const home = await homePathFor(user.id, user.email, user.lastOrgId);
+  if (home && !start) redirect(home);
+  return <Onboarding user={user} hasCompany={!!home} />;
 }

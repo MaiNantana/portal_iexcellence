@@ -1,0 +1,40 @@
+# CD: every push to main (or the "Run workflow" button) deploys to https://portal.iexcellence.cloud.
+# Runs on a self-hosted runner installed ON the production server (service account SYSTEM, label "portal"),
+# so no SSH, password or inbound port is needed. Setup: DEPLOYMENT.md → "CI/CD".
+name: Deploy to production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    needs: ci
+    runs-on: [self-hosted, Windows, portal]
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      # Mirror the checkout into the IIS site. Excluded paths are neither copied nor deleted, so the
+      # server's .env, web.config, node_modules, build output and iisnode logs stay in place.
+      - name: Sync code to the site
+        shell: powershell
+        run: |
+          robocopy . "C:\Program Files\iisnode\www\portal" /MIR /NFL /NDL /NJH /NP `
+            /XD .git .github node_modules .next iisnode `
+            /XF .env web.config
+          if ($LASTEXITCODE -ge 8) { throw "robocopy failed ($LASTEXITCODE)" }
+          exit 0
+
+      # npm ci, prisma migrate deploy, build, restart the app pool, smoke test.
+      - name: Install, migrate, build, restart
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File "C:\Program Files\iisnode\www\portal\deploy\deploy.ps1"

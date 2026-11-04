@@ -1,0 +1,253 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql" // MariaDB
+  url      = env("DATABASE_URL")
+  // Fixed shadow DB so the app user needs no global CREATE DATABASE privilege.
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  EMPLOYEE
+}
+
+enum Plan {
+  FREE
+  PRO
+}
+
+enum LinkVisibility {
+  COMPANY
+  PERSONAL
+}
+
+/// What a join link does: disabled, creates a request for an admin to approve, or joins immediately.
+enum JoinMode {
+  OFF
+  APPROVAL
+  OPEN
+}
+
+enum ExternalSystem {
+  HR
+  TASK
+}
+
+/// A tenant (company). People join by invitation, verified email domain, or join link.
+model Org {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  plan        Plan     @default(FREE)
+  joinCode    String?  @unique
+  joinMode    JoinMode @default(OFF)
+  hrEnabled   Boolean  @default(false)
+  hrBaseUrl   String?  @db.Text
+  taskEnabled Boolean  @default(false)
+  taskBaseUrl String?  @db.Text
+  /// Task backend (e.g. https://pmo.iexcellence.cloud:8443) for server-to-server calls.
+  taskApiUrl     String? @db.Text
+  /// Task workspace API key (AES-GCM encrypted, see lib/secrets.ts); links members to the company workspace.
+  taskApiKeyEnc  String? @db.Text
+  taskApiKeyHint String?
+  createdAt   DateTime @default(now())
+
+  memberships  Membership[]
+  news         News[]
+  links        AppLink[]
+  accountLinks AccountLink[]
+  invitations  Invitation[]
+  domains      OrgDomain[]
+  joinRequests JoinRequest[]
+
+  @@map("orgs")
+}
+
+/// An email domain an org has proven (DNS TXT) it controls; verified users on it can join automatically.
+model OrgDomain {
+  id          String    @id @default(cuid())
+  orgId       String
+  domain      String
+  verifyToken String
+  verifiedAt  DateTime?
+  autoJoin    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, domain])
+  @@index([domain])
+  @@map("org_domains")
+}
+
+/// Pending request to join via a link in APPROVAL mode; deleted when an admin decides.
+model JoinRequest {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String
+  createdAt DateTime @default(now())
+
+  org  Org  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId])
+  @@map("join_requests")
+}
+
+/// One person across all tenants. The (verified, lowercased) email is the identity shared with HR / Task.
+model User {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  emailVerifiedAt DateTime?
+  name            String?
+  /// argon2id; null for people who only use Google / Microsoft.
+  passwordHash    String?   @db.Text
+  failedLogins    Int       @default(0)
+  lockedUntil     DateTime?
+  /// Tenant shown after sign-in; must be one of the user's memberships.
+  lastOrgId       String?
+  createdAt       DateTime  @default(now())
+  lastLoginAt     DateTime?
+
+  identities   Identity[]
+  memberships  Membership[]
+  joinRequests JoinRequest[]
+  acks         NewsAck[]
+  links        AppLink[]
+  accountLinks AccountLink[]
+
+  @@map("users")
+}
+
+/// A Google / Microsoft account bound to a user, keyed by the provider's stable subject.
+model Identity {
+  id        String   @id @default(cuid())
+  userId    String
+  provider  String
+  subject   String
+  email     String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, subject])
+  @@map("identities")
+}
+
+/// Admin-issued right to join an org; accepted automatically at the invitee's first verified sign-in.
+model Invitation {
+  id         String    @id @default(cuid())
+  orgId      String
+  email      String
+  role       Role      @default(EMPLOYEE)
+  department String?
+  invitedBy  String
+  createdAt  DateTime  @default(now())
+  acceptedAt DateTime?
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, email])
+  @@index([email])
+  @@map("invitations")
+}
+
+/// One-time email code (OTP) for verifying an address and setting / resetting a password.
+model EmailCode {
+  id        String    @id @default(cuid())
+  email     String
+  codeHash  String
+  attempts  Int       @default(0)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([email, createdAt])
+  @@map("email_codes")
+}
+
+model Membership {
+  id             String   @id @default(cuid())
+  orgId          String
+  userId         String
+  role           Role     @default(EMPLOYEE)
+  department     String?
+  /// Ordered quick-access keys as a JSON array: "sys:hr", "sys:task", "app:<AppLink.id>".
+  pins           Json?
+  pinsCustomized Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  org  Org  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId])
+  @@map("memberships")
+}
+
+/// Phase 3: maps a portal user to their user id inside HR / Task for this tenant.
+model AccountLink {
+  id             String         @id @default(cuid())
+  orgId          String
+  userId         String
+  system         ExternalSystem
+  externalUserId String
+  linkedAt       DateTime       @default(now())
+
+  org  Org  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId, system])
+  @@unique([orgId, system, externalUserId])
+  @@map("account_links")
+}
+
+model News {
+  id          String   @id @default(cuid())
+  orgId       String
+  title       String
+  body        String   @db.Text
+  channel     String
+  /// "all" or a department code matching Membership.department.
+  audience    String   @default("all")
+  requiresAck Boolean  @default(false)
+  authorName  String
+  publishedAt DateTime @default(now())
+
+  org  Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  acks NewsAck[]
+
+  @@index([orgId, publishedAt])
+  @@map("news")
+}
+
+model NewsAck {
+  newsId  String
+  userId  String
+  ackedAt DateTime @default(now())
+
+  news News @relation(fields: [newsId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([newsId, userId])
+  @@map("news_acks")
+}
+
+model AppLink {
+  id         String         @id @default(cuid())
+  orgId      String
+  /// Set for PERSONAL links; null for COMPANY links.
+  ownerId    String?
+  name       String
+  url        String         @db.Text
+  visibility LinkVisibility
+  createdAt  DateTime       @default(now())
+
+  org   Org   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  owner User? @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, visibility])
+  @@map("app_links")
+}

@@ -6,20 +6,36 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:migrate": "prisma migrate dev",
+    "db:seed": "prisma db seed",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@aws-sdk/client-sesv2": "^3.1161.0",
+    "@node-rs/argon2": "^2.2.2",
+    "@prisma/client": "^6.19.3",
+    "jose": "^6.2.15",
+    "next": "15.5.28",
+    "next-auth": "^5.0.0-beta.32",
+    "nodemailer": "^8.0.11",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "next": "15.5.28"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "typescript": "^5",
+    "@eslint/eslintrc": "^3",
     "@types/node": "^20",
+    "@types/nodemailer": "^8.0.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "15.5.28",
-    "@eslint/eslintrc": "^3"
+    "prisma": "^6.19.3",
+    "tsx": "^4.23.15",
+    "typescript": "^5"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   }
 }
