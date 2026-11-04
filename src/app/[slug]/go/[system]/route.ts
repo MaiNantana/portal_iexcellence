@@ -1,7 +1,8 @@
 import { auth } from "@/auth";
-import { loginPath, orgPath, safeNext } from "@/lib/context";
+import { loginPath, orgPath, safeNext, type Member } from "@/lib/context";
 import { db } from "@/lib/db";
 import { portalIssuer, signHandoff } from "@/lib/handoff";
+import { hrAppUrl, hrCustomer } from "@/lib/hr";
 import { TASK_API_URL, TASK_BASE_URL } from "@/lib/portal";
 import { decryptSecret } from "@/lib/secrets";
 
@@ -31,7 +32,7 @@ async function connectToCompanyWorkspace(apiUrl: string, apiKeyEnc: string, emai
  */
 export async function GET(req: Request, { params }: { params: Promise<{ slug: string; system: string }> }) {
   const { slug, system } = await params;
-  if (system !== "task") return new Response("Not found", { status: 404 });
+  if (system !== "task" && system !== "hr") return new Response("Not found", { status: 404 });
   const here = new URL(req.url);
 
   const session = await auth();
@@ -42,6 +43,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   });
   if (!member) return new Response("Not found", { status: 404 });
   const { org } = member;
+  if (system === "hr") return goToHr(req, member);
   if (!org.taskEnabled) return Response.redirect(new URL(orgPath(slug), req.url), 303);
 
   if (org.taskApiKeyEnc) await connectToCompanyWorkspace(TASK_API_URL, org.taskApiKeyEnc, member.user.email);
@@ -49,6 +51,32 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   const token = await signHandoff(member, "taskexcellence");
   const target = new URL("/portal-login", TASK_BASE_URL);
   target.hash = new URLSearchParams({ token, to: safeNext(here.searchParams.get("to")) }).toString();
+  return handoffRedirect(target);
+}
+
+/**
+ * /abc/go/hr — first time: link the HR account (/abc/hr-link). After that: HR's PortalLogin.ashx,
+ * which signs the linked HR user in. Admins land in HR's back office, everyone else in self-service.
+ */
+async function goToHr(req: Request, member: Member) {
+  const { org } = member;
+  if (!org.hrEnabled || !org.hrBaseUrl) return Response.redirect(new URL(orgPath(org.slug), req.url), 303);
+  const link = await db.accountLink.findUnique({
+    where: { orgId_userId_system: { orgId: org.id, userId: member.userId, system: "HR" } },
+  });
+  if (!link) return Response.redirect(new URL(orgPath(org.slug, "/hr-link"), req.url), 303);
+
+  const token = await signHandoff(member, "hrexcellence", {
+    hr_token: link.externalUserId,
+    hr_cust: hrCustomer(org.hrBaseUrl),
+    mode: member.role === "ADMIN" ? "backoffice" : "self",
+  });
+  const target = hrAppUrl(org.hrBaseUrl, "PortalLogin.ashx");
+  target.hash = new URLSearchParams({ token }).toString();
+  return handoffRedirect(target);
+}
+
+function handoffRedirect(target: URL) {
   return new Response(null, {
     status: 303,
     headers: { Location: target.href, "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" },

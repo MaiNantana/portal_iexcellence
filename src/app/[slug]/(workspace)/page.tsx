@@ -25,7 +25,7 @@ export default async function HomePage({ params }: { params: Promise<{ slug: str
       desc: "ลงเวลา ขอลา และสลิปเงินเดือน",
       icon: "◷",
       style: "orange",
-      url: org.hrEnabled ? org.hrBaseUrl : null,
+      url: org.hrEnabled && org.hrBaseUrl ? `${base}/go/hr` : null,
     },
     {
       name: "TaskExcellence",

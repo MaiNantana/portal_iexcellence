@@ -32,9 +32,10 @@ export async function publicJwks() {
 }
 
 /** Identity of `member` for one sign-in at `audience`, valid for 60 seconds. */
-export async function signHandoff(member: Member, audience: HandoffAudience) {
+export async function signHandoff(member: Member, audience: HandoffAudience, extra: Record<string, string> = {}) {
   const { kid, privateKey } = signingKey();
   return new SignJWT({
+    ...extra,
     email: member.user.email,
     email_verified: true,
     name: member.user.name ?? undefined,

@@ -78,7 +78,7 @@ export async function getQuickEntries(member: Member): Promise<QuickEntry[]> {
   });
   const entries: QuickEntry[] = [];
   if (org.hrEnabled && org.hrBaseUrl) {
-    entries.push({ key: "sys:hr", kind: "hr", name: "HR Excellence", desc: "ลงเวลา · ลา · เงินเดือน", url: org.hrBaseUrl, icon: "◷" });
+    entries.push({ key: "sys:hr", kind: "hr", name: "HR Excellence", desc: "ลงเวลา · ลา · เงินเดือน", url: `/${org.slug}/go/hr`, icon: "◷" });
   }
   if (org.taskEnabled) {
     // Through the Portal so the user is signed in to Task automatically.
