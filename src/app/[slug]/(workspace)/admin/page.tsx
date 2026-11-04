@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { createNews, deleteLink, deleteNews, inviteMember, removeMember, revokeInvitation, setMemberRole, updateConnections } from "@/app/actions";
+import { connectHr, createNews, deleteLink, deleteNews, inviteMember, removeMember, revokeInvitation, setMemberRole, setSystemConnected } from "@/app/actions";
 import {
   addDomain,
   decideJoinRequest,
@@ -246,36 +246,45 @@ function ConnectionsTab({
   org,
 }: {
   slug: string;
-  org: { hrEnabled: boolean; hrBaseUrl: string | null; taskEnabled: boolean; taskApiKeyHint: string | null };
+  org: { hrEnabled: boolean; hrBaseUrl: string | null; taskEnabled: boolean };
 }) {
+  const status = (on: boolean) => <span className={`chip ${on ? "" : "gray"}`}>{on ? "เชื่อมต่อแล้ว" : "ยังไม่เชื่อม"}</span>;
+  const disconnect = (system: "hr" | "task") => (
+    <form action={setSystemConnected.bind(null, slug, system, false)}>
+      <button className="btn tiny">ตัดการเชื่อมต่อ</button>
+    </form>
+  );
   return (
     <section className="card panel" style={{ maxWidth: 720 }}>
-      <div className="notice">
-        TaskExcellence: พนักงานกดจาก Portal แล้วเข้า Task ได้ทันทีโดยไม่ต้อง login ซ้ำ (จับคู่ด้วยอีเมล ถ้ายังไม่มีบัญชี Task จะสร้างให้)
-        · ถ้าต้องการให้พนักงานถูกเพิ่มเข้า workspace บริษัทใน Task อัตโนมัติ ให้ใส่ API key ของ workspace นั้น (สร้างใน Task → API Keys)
+      <div className="adcard">
+        <div style={{ flex: 1 }}>
+          <b>TaskExcellence</b> {status(org.taskEnabled)}
+          <small>พนักงานกดจาก Portal แล้วเข้า Task ได้ทันทีโดยไม่ต้อง login ซ้ำ (จับคู่ด้วยอีเมล ถ้ายังไม่มีบัญชี Task จะสร้างให้)</small>
+        </div>
+        {org.taskEnabled ? (
+          disconnect("task")
+        ) : (
+          <form action={setSystemConnected.bind(null, slug, "task", true)}>
+            <button className="btn tiny primary">เชื่อมต่อ</button>
+          </form>
+        )}
       </div>
-      <ActionForm org={slug} action={updateConnections} submitLabel="บันทึกการเชื่อมต่อ" resetOnSuccess={false}>
-        <div className="adcard" style={{ display: "block" }}>
-          <label className="checkline" style={{ margin: 0 }}>
-            <input type="checkbox" name="hrEnabled" defaultChecked={org.hrEnabled} /> <b>HR Excellence</b>
-          </label>
-          <div className="field">
-            <label htmlFor="hrBaseUrl">URL ของ HR</label>
-            <input id="hrBaseUrl" name="hrBaseUrl" type="url" defaultValue={org.hrBaseUrl ?? ""} placeholder="https://hr.iexcellence.net/" />
-          </div>
+      <div className="adcard" style={org.hrEnabled ? undefined : { display: "block" }}>
+        <div style={{ flex: 1 }}>
+          <b>HR Excellence</b> {status(org.hrEnabled)}
+          <small>{org.hrEnabled ? org.hrBaseUrl : "ลงเวลา ขอลา และสลิปเงินเดือน"}</small>
         </div>
-        <div className="adcard" style={{ display: "block" }}>
-          <label className="checkline" style={{ margin: 0 }}>
-            <input type="checkbox" name="taskEnabled" defaultChecked={org.taskEnabled} /> <b>TaskExcellence</b>
-          </label>
-          <div className="field">
-            <label htmlFor="taskApiKey">
-              API key ของ workspace บริษัท (ไม่บังคับ) {org.taskApiKeyHint ? `· ตั้งค่าแล้ว (${org.taskApiKeyHint}…)` : "· ยังไม่ได้ตั้งค่า"}
-            </label>
-            <input id="taskApiKey" name="taskApiKey" type="password" autoComplete="off" placeholder={org.taskApiKeyHint ? "เว้นว่างเพื่อใช้ค่าเดิม · พิมพ์ clear เพื่อลบ" : "tmk_..."} />
-          </div>
-        </div>
-      </ActionForm>
+        {org.hrEnabled ? (
+          disconnect("hr")
+        ) : (
+          <ActionForm org={slug} action={connectHr} submitLabel="เชื่อมต่อ" resetOnSuccess={false}>
+            <div className="field">
+              <label htmlFor="hrBaseUrl">URL ของ HR</label>
+              <input id="hrBaseUrl" name="hrBaseUrl" type="url" required defaultValue={org.hrBaseUrl ?? `https://hr.iexcellence.net/${slug}`} />
+            </div>
+          </ActionForm>
+        )}
+      </div>
     </section>
   );
 }

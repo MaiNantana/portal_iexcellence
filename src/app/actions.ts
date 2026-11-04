@@ -11,7 +11,6 @@ import { db } from "@/lib/db";
 import { orgPath, requireAdmin, requireMember, requireUser, slugFrom } from "@/lib/context";
 import { normalizeEmail, syncMemberships } from "@/lib/identity";
 import { sendMail } from "@/lib/mail";
-import { encryptSecret } from "@/lib/secrets";
 import { CHANNELS, getQuickEntries, newsWhere, pinnedEntries, safeHttpsUrl } from "@/lib/portal";
 
 export type FormState = { error?: string; ok?: string } | undefined;
@@ -129,24 +128,20 @@ export async function deleteNews(slug: string, id: string) {
   revalidatePath("/", "layout");
 }
 
-export async function updateConnections(_: FormState, form: FormData): Promise<FormState> {
+export async function connectHr(_: FormState, form: FormData): Promise<FormState> {
   const admin = await requireAdmin(slugFrom(form));
-  const hrEnabled = form.get("hrEnabled") === "on";
-  const taskEnabled = form.get("taskEnabled") === "on";
   const hrBaseUrl = safeHttpsUrl(form.get("hrBaseUrl") as string);
-  if (hrEnabled && !hrBaseUrl) return { error: "HR ที่เปิดใช้ต้องมี URL แบบ HTTPS" };
-  // The key is write-only: blank keeps the stored one, "clear" removes it.
-  const rawKey = String(form.get("taskApiKey") ?? "").trim();
-  if (rawKey && rawKey !== "clear" && !/^tmk_[0-9a-f]{64}$/.test(rawKey)) return { error: "API key ของ Task ต้องขึ้นต้นด้วย tmk_" };
-  const keyData =
-    rawKey === "clear"
-      ? { taskApiKeyEnc: null, taskApiKeyHint: null }
-      : rawKey
-        ? { taskApiKeyEnc: encryptSecret(rawKey), taskApiKeyHint: rawKey.slice(0, 12) }
-        : {};
-  await db.org.update({ where: { id: admin.orgId }, data: { hrEnabled, hrBaseUrl, taskEnabled, ...keyData } });
+  if (!hrBaseUrl) return { error: "URL ของ HR ต้องขึ้นต้นด้วย https://" };
+  await db.org.update({ where: { id: admin.orgId }, data: { hrEnabled: true, hrBaseUrl } });
   revalidatePath("/", "layout");
-  return { ok: "บันทึกการเชื่อมต่อแล้ว" };
+  return { ok: "เชื่อมต่อ HR Excellence แล้ว" };
+}
+
+export async function setSystemConnected(slug: string, system: "hr" | "task", connected: boolean) {
+  const admin = await requireAdmin(slug);
+  const data = system === "hr" ? { hrEnabled: connected } : { taskEnabled: connected };
+  await db.org.update({ where: { id: admin.orgId }, data });
+  revalidatePath("/", "layout");
 }
 
 export async function setMemberRole(slug: string, membershipId: string, role: "ADMIN" | "EMPLOYEE") {
