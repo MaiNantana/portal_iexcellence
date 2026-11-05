@@ -33,16 +33,16 @@ export async function hrDbCaptions(hrBaseUrl: string): Promise<Map<string, strin
   }
 }
 
-async function approvalsFor(hrBaseUrl: string, link: AccountLink): Promise<HrApproval[]> {
+async function approvalsFor(link: AccountLink): Promise<HrApproval[]> {
   const hit = cache.get(link.id);
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.value;
   let employeeId = link.externalRef;
   if (!employeeId) {
-    employeeId = await hrEmployeeId(hrBaseUrl, link.externalUserId);
+    employeeId = await hrEmployeeId(link.externalUserId);
     if (!employeeId) return [];
     await db.accountLink.update({ where: { id: link.id }, data: { externalRef: employeeId } });
   }
-  const value = await hrPendingApprovals(hrBaseUrl, link.externalUserId, employeeId);
+  const value = await hrPendingApprovals(link.externalUserId, employeeId);
   cache.set(link.id, { at: Date.now(), value });
   return value;
 }
@@ -52,11 +52,10 @@ async function approvalsFor(hrBaseUrl: string, link: AccountLink): Promise<HrApp
  * or null when HR isn't connected, the member hasn't linked an HR account, or no database answered.
  */
 export async function getHrApprovals(member: Member): Promise<HrApproval[] | null> {
-  const { hrEnabled, hrBaseUrl } = member.org;
-  if (!hrEnabled || !hrBaseUrl) return null;
+  if (!member.org.hrEnabled || !member.org.hrBaseUrl) return null;
   const links = await hrLinks(member);
   if (!links.length) return null;
-  const results = await Promise.allSettled(links.map((l) => approvalsFor(hrBaseUrl, l)));
+  const results = await Promise.allSettled(links.map(approvalsFor));
   const ok = results.flatMap((r, i) => {
     if (r.status === "fulfilled") return [r.value];
     console.error(`[hr] approvals failed (${links[i].externalDb}):`, r.reason);
