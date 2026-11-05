@@ -8,7 +8,7 @@ import type { Member } from "@/lib/context";
 const ALG = "ES256";
 const TTL_SECONDS = 60;
 
-export type HandoffAudience = "taskexcellence" | "hrexcellence";
+export type HandoffAudience = "taskexcellence" | "taskexcellence-api" | "hrexcellence";
 
 let cached: { kid: string; privateKey: KeyObject; publicKey: KeyObject } | null = null;
 

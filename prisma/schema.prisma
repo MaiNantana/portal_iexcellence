@@ -3,8 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql" // MariaDB
-  url      = env("DATABASE_URL")
+  provider          = "mysql" // MariaDB
+  url               = env("DATABASE_URL")
   // Fixed shadow DB so the app user needs no global CREATE DATABASE privilege.
   shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
@@ -38,22 +38,22 @@ enum ExternalSystem {
 
 /// A tenant (company). People join by invitation, verified email domain, or join link.
 model Org {
-  id          String   @id @default(cuid())
-  slug        String   @unique
-  name        String
-  plan        Plan     @default(FREE)
-  joinCode    String?  @unique
-  joinMode    JoinMode @default(OFF)
-  hrEnabled   Boolean  @default(false)
-  hrBaseUrl   String?  @db.Text
-  taskEnabled Boolean  @default(false)
-  taskBaseUrl String?  @db.Text
+  id             String   @id @default(cuid())
+  slug           String   @unique
+  name           String
+  plan           Plan     @default(FREE)
+  joinCode       String?  @unique
+  joinMode       JoinMode @default(OFF)
+  hrEnabled      Boolean  @default(false)
+  hrBaseUrl      String?  @db.Text
+  taskEnabled    Boolean  @default(false)
+  taskBaseUrl    String?  @db.Text
   /// Task backend (e.g. https://pmo.iexcellence.cloud:8443) for server-to-server calls.
-  taskApiUrl     String? @db.Text
+  taskApiUrl     String?  @db.Text
   /// Task workspace API key (AES-GCM encrypted, see lib/secrets.ts); links members to the company workspace.
-  taskApiKeyEnc  String? @db.Text
+  taskApiKeyEnc  String?  @db.Text
   taskApiKeyHint String?
-  createdAt   DateTime @default(now())
+  createdAt      DateTime @default(now())
 
   memberships  Membership[]
   news         News[]
@@ -62,6 +62,7 @@ model Org {
   invitations  Invitation[]
   domains      OrgDomain[]
   joinRequests JoinRequest[]
+  services     Service[]
 
   @@map("orgs")
 }
@@ -250,4 +251,29 @@ model AppLink {
 
   @@index([orgId, visibility])
   @@map("app_links")
+}
+
+/// A company service on the Portal (e.g. "แจ้งซ่อม") mapped to a TaskExcellence project.
+/// Opening it signs the member in to Task and deep-links to that project, or straight to its form.
+model Service {
+  id              String   @id @default(cuid())
+  orgId           String
+  name            String
+  description     String?
+  icon            String   @default("wrench")
+  taskWorkspaceId String
+  taskProjectId   String
+  /// Shown in the admin UI so a mapping stays readable even if Task renames things.
+  taskLabel       String
+  /// "board" opens the project; "form" opens its request form ("+ แจ้งใหม่").
+  openMode        String   @default("board")
+  /// "all" or a department key (same keys as news audiences).
+  audience        String   @default("all")
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@map("services")
 }

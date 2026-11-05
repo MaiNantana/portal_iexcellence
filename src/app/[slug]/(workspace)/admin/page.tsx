@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { listHrDatabases } from "@/app/hr-actions";
 import { HrConnectForm } from "@/components/HrConnectForm";
-import { createNews, deleteLink, deleteNews, inviteMember, removeMember, revokeInvitation, setMemberRole, setSystemConnected } from "@/app/actions";
+import { createNews, createService, deleteLink, deleteNews, deleteService, inviteMember, removeMember, revokeInvitation, setMemberRole, setSystemConnected } from "@/app/actions";
 import {
   addDomain,
   decideJoinRequest,
@@ -15,10 +15,12 @@ import {
 import { ActionForm } from "@/components/ActionForm";
 import { orgPath, requireAdmin } from "@/lib/context";
 import { db } from "@/lib/db";
-import { CHANNELS, DEPARTMENTS, channelLabel, domainTxtName, formatThaiDate } from "@/lib/portal";
+import { CHANNELS, DEPARTMENTS, SERVICE_ICONS, channelLabel, domainTxtName, formatThaiDate } from "@/lib/portal";
+import { getTaskProjects } from "@/lib/task";
 
 const TABS = [
   ["news", "ข่าวสาร"],
+  ["services", "บริการ"],
   ["links", "ลิงก์บริษัท"],
   ["connections", "เชื่อมต่อโปรแกรม"],
   ["members", "สมาชิก"],
@@ -48,6 +50,7 @@ export default async function AdminPage({ params, searchParams }: { params: Prom
         ))}
       </nav>
       {tab === "news" && <NewsTab slug={slug} orgId={admin.orgId} />}
+      {tab === "services" && <ServicesTab slug={slug} admin={admin} />}
       {tab === "links" && <LinksTab slug={slug} orgId={admin.orgId} />}
       {tab === "connections" && <ConnectionsTab slug={slug} org={admin.org} />}
       {tab === "members" && <MembersTab slug={slug} orgId={admin.orgId} selfId={admin.id} />}
@@ -215,6 +218,115 @@ async function NewsTab({ slug, orgId }: { slug: string; orgId: string }) {
             </form>
           </div>
         ))}
+      </section>
+    </div>
+  );
+}
+
+async function ServicesTab({ slug, admin }: { slug: string; admin: Awaited<ReturnType<typeof requireAdmin>> }) {
+  if (!admin.org.taskEnabled) {
+    return (
+      <section className="card panel">
+        <div className="notice">
+          บริการของบริษัท (เช่น แจ้งซ่อม ใบเสนอราคา) ทำงานบน TaskExcellence ·{" "}
+          <Link href={orgPath(slug, "/admin?tab=connections")} className="inline-link">เชื่อมต่อ Task ก่อน</Link>
+        </div>
+      </section>
+    );
+  }
+  const [services, workspaces] = await Promise.all([
+    db.service.findMany({ where: { orgId: admin.orgId }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
+    getTaskProjects(admin),
+  ]);
+  return (
+    <div className="two-col">
+      <section className="card panel">
+        <h3>บริการของบริษัท</h3>
+        <p className="low">พนักงานเห็นในเมนูลัด กดแล้วเข้า Project ใน Task ที่ผูกไว้ทันที โดยไม่ต้องค้นหาเอง</p>
+        {services.length === 0 && <div className="empty" style={{ marginTop: 12 }}>ยังไม่มีบริการ</div>}
+        {services.map((s) => (
+          <div className="adcard" key={s.id}>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <b style={{ fontSize: 12 }}>
+                {SERVICE_ICONS[s.icon]} {s.name}
+              </b>{" "}
+              <span className="chip gray">{s.audience === "all" ? "ทุกคน" : (DEPARTMENTS[s.audience] ?? s.audience)}</span>
+              <small>
+                Task: {s.taskLabel} · {s.openMode === "form" ? "เปิดฟอร์มแจ้งใหม่" : "เปิดตารางงาน"}
+              </small>
+            </div>
+            <form action={deleteService.bind(null, slug, s.id)}>
+              <button className="btn tiny danger">ลบ</button>
+            </form>
+          </div>
+        ))}
+      </section>
+      <section className="card panel">
+        <h3>เพิ่มบริการ</h3>
+        {workspaces === null ? (
+          <div className="notice error">ติดต่อ TaskExcellence ไม่ได้ ลองใหม่อีกครั้ง</div>
+        ) : workspaces.every((w) => w.projects.length === 0) ? (
+          <div className="notice">
+            ยังไม่มี Project ใน Task ที่บัญชีคุณ ({admin.user.email}) เห็น · สร้าง Project (เช่นจาก Template แจ้งซ่อม หรือ Accounting) ใน Task ก่อน
+          </div>
+        ) : (
+          <ActionForm org={slug} action={createService} submitLabel="เพิ่มบริการ">
+            <div className="field">
+              <label htmlFor="svcName">ชื่อบริการ</label>
+              <input id="svcName" name="name" required maxLength={60} placeholder="เช่น แจ้งซ่อม" />
+            </div>
+            <div className="field">
+              <label htmlFor="svcDesc">คำอธิบาย</label>
+              <input id="svcDesc" name="description" maxLength={120} placeholder="เช่น บริการแจ้งซ่อมบำรุง" />
+            </div>
+            <div className="field">
+              <label htmlFor="svcIcon">ไอคอน</label>
+              <select id="svcIcon" name="icon" defaultValue="wrench">
+                {Object.entries(SERVICE_ICONS).map(([k, glyph]) => (
+                  <option key={k} value={k}>
+                    {glyph} {k}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="svcProject">Project ใน TaskExcellence</label>
+              <select id="svcProject" name="project" required defaultValue="">
+                <option value="" disabled>
+                  เลือก Project
+                </option>
+                {workspaces.map((w) => (
+                  <optgroup key={w.id} label={w.name}>
+                    {w.projects.map((p) => (
+                      <option key={p.id} value={`${w.id}|${p.id}`}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="svcMode">เมื่อกดบริการ</label>
+              <select id="svcMode" name="openMode" defaultValue="board">
+                <option value="board">เปิดตารางงานของ Project</option>
+                <option value="form">เปิดฟอร์มสร้างงานใหม่ (เช่น + แจ้งซ่อมใหม่)</option>
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="svcAudience">ใครใช้ได้</label>
+              <select id="svcAudience" name="audience" defaultValue="all">
+                <option value="all">ทุกคนในบริษัท</option>
+                {Object.entries(DEPARTMENTS).map(([k, label]) => (
+                  <option key={k} value={k}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <small className="quiet">สิทธิ์ใน Task ยังมีผลเหมือนเดิม · พนักงานต้องเป็นสมาชิก Project นั้นใน Task จึงจะเปิดได้</small>
+          </ActionForm>
+        )}
       </section>
     </div>
   );

@@ -11,7 +11,8 @@ import { db } from "@/lib/db";
 import { orgPath, requireAdmin, requireMember, requireUser, slugFrom } from "@/lib/context";
 import { normalizeEmail, syncMemberships } from "@/lib/identity";
 import { sendMail } from "@/lib/mail";
-import { CHANNELS, getQuickEntries, newsWhere, pinnedEntries, safeHttpsUrl } from "@/lib/portal";
+import { CHANNELS, DEPARTMENTS, getQuickEntries, newsWhere, pinnedEntries, safeHttpsUrl, SERVICE_ICONS } from "@/lib/portal";
+import { getTaskProjects } from "@/lib/task";
 
 export type FormState = { error?: string; ok?: string } | undefined;
 
@@ -125,6 +126,58 @@ export async function createNews(_: FormState, form: FormData): Promise<FormStat
 export async function deleteNews(slug: string, id: string) {
   const admin = await requireAdmin(slug);
   await db.news.deleteMany({ where: { id, orgId: admin.orgId } });
+  revalidatePath("/", "layout");
+}
+
+const serviceSchema = z.object({
+  name: z.string().trim().min(1).max(60),
+  description: z.string().trim().max(120),
+  icon: z.string().refine((i) => i in SERVICE_ICONS),
+  project: z.string().regex(/^[^|]+\|[^|]+$/),
+  openMode: z.enum(["board", "form"]),
+  audience: z.string().refine((a) => a === "all" || a in DEPARTMENTS),
+});
+
+/** Maps a Portal service to a Task project the admin can see in Task. */
+export async function createService(_: FormState, form: FormData): Promise<FormState> {
+  const admin = await requireAdmin(slugFrom(form));
+  const parsed = serviceSchema.safeParse({
+    name: form.get("name"),
+    description: form.get("description") ?? "",
+    icon: form.get("icon"),
+    project: form.get("project"),
+    openMode: form.get("openMode"),
+    audience: form.get("audience"),
+  });
+  if (!parsed.success) return { error: "กรอกชื่อบริการ และเลือก Project ใน Task" };
+  const [workspaceId, projectId] = parsed.data.project.split("|");
+  const workspaces = await getTaskProjects(admin);
+  if (!workspaces) return { error: "ติดต่อ TaskExcellence ไม่ได้ ลองใหม่อีกครั้ง" };
+  const ws = workspaces.find((w) => w.id === workspaceId);
+  const project = ws?.projects.find((p) => p.id === projectId);
+  if (!ws || !project) return { error: "ไม่พบ Project นี้ใน Task หรือคุณไม่มีสิทธิ์" };
+  const { name, description, icon, openMode, audience } = parsed.data;
+  await db.service.create({
+    data: {
+      name,
+      description: description || null,
+      icon,
+      openMode,
+      audience,
+      orgId: admin.orgId,
+      taskWorkspaceId: workspaceId,
+      taskProjectId: projectId,
+      taskLabel: `${ws.name} › ${project.name}`,
+      sortOrder: await db.service.count({ where: { orgId: admin.orgId } }),
+    },
+  });
+  revalidatePath("/", "layout");
+  return { ok: "เพิ่มบริการแล้ว" };
+}
+
+export async function deleteService(slug: string, id: string) {
+  const admin = await requireAdmin(slug);
+  await db.service.deleteMany({ where: { id, orgId: admin.orgId } });
   revalidatePath("/", "layout");
 }
 

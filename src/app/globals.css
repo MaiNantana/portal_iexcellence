@@ -180,3 +180,18 @@ a{text-decoration:none;color:inherit}
   .mobile-dock a{display:flex;flex-direction:column;align-items:center;gap:2px;color:#486062;min-width:78px;font-weight:700;font-size:10px;padding:3px 10px}
   .mobile-dock span{font-size:19px;line-height:22px}
 }
+/* My Work: dashboard counters + task rows */
+.workstats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.workstat{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 14px;border:1px solid var(--line);border-radius:11px;background:#fff;color:inherit}
+.workstat:hover{border-color:var(--green)}
+.workstat b{font-size:20px}
+.workstat.warn b{color:#c2410c}
+.workstat small{display:block;color:var(--muted);font-size:10px}
+.workrow{display:flex;align-items:center;gap:12px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:inherit;margin-top:8px}
+.workrow:hover{border-color:var(--green)}
+.workrow .wtitle{flex:1;min-width:0}
+.workrow .wtitle b{display:block;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.workrow .wtitle small{color:var(--muted);font-size:10.5px}
+.workrow .wdue{font-size:10.5px;color:var(--muted);white-space:nowrap}
+.workrow .wdue.late{color:#c2410c;font-weight:700}
+@media (max-width:640px){.workstats{grid-template-columns:1fr}.workrow{flex-wrap:wrap}}

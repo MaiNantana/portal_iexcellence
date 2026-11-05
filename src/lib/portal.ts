@@ -1,4 +1,4 @@
-import type { AppLink, News } from "@prisma/client";
+import type { AppLink, News, Service } from "@prisma/client";
 import { db } from "@/lib/db";
 import type { Member } from "@/lib/context";
 
@@ -58,7 +58,7 @@ export async function getVisibleNews(member: Member) {
 
 export type QuickEntry = {
   key: string;
-  kind: "hr" | "task" | "company" | "personal";
+  kind: "hr" | "task" | "service" | "company" | "personal";
   name: string;
   desc: string;
   url: string;
@@ -66,16 +66,42 @@ export type QuickEntry = {
   linkId?: string;
 };
 
-/** Everything this member may launch: connected systems, company links and their own personal links. */
+/** Icons a company service can use (key → glyph); the key is what's stored. */
+export const SERVICE_ICONS: Record<string, string> = {
+  wrench: "🔧",
+  folder: "📁",
+  document: "📄",
+  quote: "🧾",
+  money: "💰",
+  cart: "🛒",
+  truck: "🚚",
+  people: "👥",
+  calendar: "📅",
+  chart: "📊",
+};
+
+/** Company services this member may use: everyone's, plus their department's. */
+export async function getVisibleServices(member: Member) {
+  if (!member.org.taskEnabled) return [];
+  return db.service.findMany({
+    where: { orgId: member.orgId, ...(member.role === "ADMIN" ? {} : { audience: { in: ["all", member.department ?? "all"] } }) },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+  });
+}
+
+/** Everything this member may launch: connected systems, company services, company links and their own personal links. */
 export async function getQuickEntries(member: Member): Promise<QuickEntry[]> {
   const { org } = member;
-  const links = await db.appLink.findMany({
-    where: {
-      orgId: org.id,
-      OR: [{ visibility: "COMPANY" }, { visibility: "PERSONAL", ownerId: member.userId }],
-    },
-    orderBy: { createdAt: "asc" },
-  });
+  const [links, services] = await Promise.all([
+    db.appLink.findMany({
+      where: {
+        orgId: org.id,
+        OR: [{ visibility: "COMPANY" }, { visibility: "PERSONAL", ownerId: member.userId }],
+      },
+      orderBy: { createdAt: "asc" },
+    }),
+    getVisibleServices(member),
+  ]);
   const entries: QuickEntry[] = [];
   if (org.hrEnabled && org.hrBaseUrl) {
     entries.push({ key: "sys:hr", kind: "hr", name: "HR Excellence", desc: "ลงเวลา · ลา · เงินเดือน", url: `/${org.slug}/go/hr`, icon: "◷" });
@@ -84,8 +110,20 @@ export async function getQuickEntries(member: Member): Promise<QuickEntry[]> {
     // Through the Portal so the user is signed in to Task automatically.
     entries.push({ key: "sys:task", kind: "task", name: "TaskExcellence", desc: "งานของฉัน · อนุมัติ · Project", url: `/${org.slug}/go/task`, icon: "☑" });
   }
+  for (const s of services) entries.push(serviceEntry(org.slug, s));
   for (const l of links) entries.push(linkEntry(l));
   return entries;
+}
+
+function serviceEntry(slug: string, s: Service): QuickEntry {
+  return {
+    key: `svc:${s.id}`,
+    kind: "service",
+    name: s.name,
+    desc: s.description || s.taskLabel,
+    url: `/${slug}/go/service/${s.id}`,
+    icon: SERVICE_ICONS[s.icon] ?? "▦",
+  };
 }
 
 function linkEntry(l: AppLink): QuickEntry {
@@ -106,7 +144,10 @@ export function pinnedEntries(member: Member, entries: QuickEntry[]) {
   const saved = Array.isArray(member.pins) ? member.pins.filter((k): k is string => typeof k === "string") : [];
   const keys = member.pinsCustomized
     ? saved
-    : [...entries.filter((e) => e.kind === "hr" || e.kind === "task"), ...entries.filter((e) => e.kind === "company").slice(0, 2)].map((e) => e.key);
+    : [
+        ...entries.filter((e) => e.kind === "hr" || e.kind === "task" || e.kind === "service"),
+        ...entries.filter((e) => e.kind === "company").slice(0, 2),
+      ].map((e) => e.key);
   const byKey = new Map(entries.map((e) => [e.key, e]));
   return keys.map((k) => byKey.get(k)).filter((e): e is QuickEntry => !!e);
 }

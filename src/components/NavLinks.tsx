@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 const ITEMS = [
   { path: "", label: "หน้าแรก", icon: "⌂" },
+  { path: "/my-work", label: "งานของฉัน", icon: "☑" },
   { path: "#services", label: "บริการ", icon: "▦" },
   { path: "/launcher", label: "⚡ ทางลัด", icon: "⚡" },
 ];
