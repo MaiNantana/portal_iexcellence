@@ -22,7 +22,9 @@ foreach ($name in $Names) {
 [IO.File]::WriteAllLines($EnvFile, $lines)
 
 Import-Module WebAdministration
-Restart-WebAppPool (Get-Website portal).applicationPool
+$pool = (Get-Website portal).applicationPool
+# A deploy stops the pool while it builds; start it then instead of failing.
+if ((Get-WebAppPoolState $pool).Value -eq "Stopped") { Start-WebAppPool $pool } else { Restart-WebAppPool $pool }
 Start-Sleep -Seconds 8
 $r = Invoke-WebRequest -Uri "https://portal.iexcellence.cloud/api/portal/jwks.json" -UseBasicParsing
 if ($r.StatusCode -ne 200) { throw "Portal did not come back: $($r.StatusCode)" }
