@@ -32,7 +32,7 @@ async function verifyAndLink(member: Member, hrBaseUrl: string, form: FormData):
     if (!dbs.length) return { error: "ไม่พบฐานข้อมูล HR ของบริษัทนี้ ตรวจสอบ URL ของ HR" };
     database = dbs.find((d) => d.name === form.get("hrDb")) ?? (dbs.length === 1 ? dbs[0] : undefined);
     if (!database) return { error: "เลือกฐานข้อมูล HR" };
-    token = await hrLogin(database, user, passwd);
+    token = await hrLogin(hrBaseUrl, database, user, passwd);
   } catch (err) {
     console.error("[hr-link] HR API failed:", err);
     return { error: "ติดต่อระบบ HR ไม่ได้ ลองใหม่อีกครั้ง" };
