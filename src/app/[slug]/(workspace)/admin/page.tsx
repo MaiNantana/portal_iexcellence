@@ -82,7 +82,7 @@ async function AccessTab({ slug, org }: { slug: string; org: { id: string; name:
           </div>
           <div className="field">
             <label htmlFor="org-slug">รหัสบริษัท (URL)</label>
-            <input id="org-slug" name="slug" required pattern="[a-z0-9][a-z0-9-]{1,28}[a-z0-9]" defaultValue={slug} />
+            <input id="org-slug" name="slug" required pattern="[a-z0-9][a-z0-9_\-]{1,28}[a-z0-9]" defaultValue={slug} />
           </div>
         </ActionForm>
         <div style={{ height: 18 }} />

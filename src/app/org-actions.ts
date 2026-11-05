@@ -16,9 +16,9 @@ const newCode = () => randomBytes(9).toString("base64url");
 // "/" and Auth.js's /api; reserve that plus a few infrastructure names.
 const RESERVED_SLUGS = new Set(["api", "assets", "static", "www"]);
 
-/** Company code used in URLs (/<slug>): 3–30 of a-z, 0-9 and inner hyphens. */
+/** Company code used in URLs (/<slug>): 3–30 of a-z, 0-9 and inner hyphens / underscores. */
 async function slugError(slug: string, exceptOrgId?: string) {
-  if (!/^[a-z0-9](?:[a-z0-9-]{1,28})[a-z0-9]$/.test(slug)) return "รหัสบริษัทใช้ a-z, 0-9 และ - ได้ 3–30 ตัว (ห้ามขึ้นต้นหรือลงท้ายด้วย -)";
+  if (!/^[a-z0-9](?:[a-z0-9_-]{1,28})[a-z0-9]$/.test(slug)) return "รหัสบริษัทใช้ a-z, 0-9, - และ _ ได้ 3–30 ตัว (ห้ามขึ้นต้นหรือลงท้ายด้วย - หรือ _)";
   if (RESERVED_SLUGS.has(slug)) return "รหัสนี้สงวนไว้ กรุณาใช้รหัสอื่น";
   const taken = await db.org.findUnique({ where: { slug }, select: { id: true } });
   if (taken && taken.id !== exceptOrgId) return "รหัสบริษัทนี้ถูกใช้แล้ว";
