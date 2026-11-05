@@ -36,8 +36,8 @@ export default async function TenantLayout({ children, params }: { children: Rea
               ♧{pending.length > 0 && <span className="dot" />}
             </Link>
             {isAdmin && (
-              <Link href={`${base}/admin`} className="iconbtn" title="จัดการบริษัท">
-                ⚙
+              <Link href={`${base}/admin`} className="iconbtn adminbtn" title="จัดการบริษัท: สมาชิก เชิญคน การเชื่อมต่อ">
+                ⚙<span>จัดการบริษัท</span>
               </Link>
             )}
             {orgs.length > 1 && (
