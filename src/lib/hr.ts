@@ -1,11 +1,13 @@
-// HR Excellence: one web app per customer at https://hr.iexcellence.net/<customer>/, sharing one API.
+// HR Excellence: one web app per customer at <HR host>/<customer>/ (e.g. https://hrtest.iexcellence.net/ixcl/), sharing one API.
 // Employees link their HR username once (checked by HR's own login API); the Portal keeps only the
 // resulting HR token "user|db|port|server" in AccountLink.externalUserId, never the password.
 // One HR URL can hold several databases, so a member has one AccountLink per database (externalDb).
 
+/** Where the admin's HR connect form starts (the company path is added after it). */
+export const HR_DEFAULT_ORIGIN = process.env.HR_DEFAULT_ORIGIN || "https://hrtest.iexcellence.net";
 export const HR_API_URL = process.env.HR_API_URL || "https://hr.iexcellence.net/hr_api/api/";
 
-/** "ixcl" from https://hr.iexcellence.net/ixcl/ */
+/** "ixcl" from https://hrtest.iexcellence.net/ixcl/ */
 export function hrCustomer(hrBaseUrl: string) {
   return new URL(hrBaseUrl).pathname.split("/").filter(Boolean)[0] ?? "";
 }

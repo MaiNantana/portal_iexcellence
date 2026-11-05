@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import type { FormState } from "@/app/actions";
 import { requireAdmin, requireMember, slugFrom, type Member } from "@/lib/context";
 import { db } from "@/lib/db";
-import { hrCustomer, hrDatabases, hrLogin, type HrDatabase } from "@/lib/hr";
+import { HR_DEFAULT_ORIGIN, hrCustomer, hrDatabases, hrLogin, type HrDatabase } from "@/lib/hr";
 import { safeHttpsUrl } from "@/lib/portal";
 
 // Wrong HR passwords per Portal user: at most 5 per 15 minutes (single server, so in memory is enough).
@@ -71,7 +71,7 @@ export async function linkHr(_: FormState, form: FormData): Promise<FormState> {
 export async function connectHr(_: FormState, form: FormData): Promise<FormState> {
   const admin = await requireAdmin(slugFrom(form));
   const hrBaseUrl = safeHttpsUrl(form.get("hrBaseUrl") as string);
-  if (!hrBaseUrl || !hrCustomer(hrBaseUrl)) return { error: "URL ของ HR ต้องเป็น https://hr.iexcellence.net/<บริษัท>" };
+  if (!hrBaseUrl || !hrCustomer(hrBaseUrl)) return { error: `URL ของ HR ต้องเป็น ${HR_DEFAULT_ORIGIN}/<บริษัท>` };
   const failed = await verifyAndLink(admin, hrBaseUrl, form);
   if (failed) return failed;
   await db.org.update({ where: { id: admin.orgId }, data: { hrEnabled: true, hrBaseUrl } });

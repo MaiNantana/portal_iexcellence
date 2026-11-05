@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { listHrDatabases } from "@/app/hr-actions";
 import { HrConnectForm } from "@/components/HrConnectForm";
+import { HR_DEFAULT_ORIGIN } from "@/lib/hr";
 import { createNews, createService, deleteLink, deleteNews, deleteService, inviteMember, removeMember, revokeInvitation, setMemberRole, setSystemConnected } from "@/app/actions";
 import {
   addDomain,
@@ -362,7 +363,7 @@ async function ConnectionsTab({
   slug: string;
   org: { hrEnabled: boolean; hrBaseUrl: string | null; taskEnabled: boolean };
 }) {
-  const hrUrl = org.hrBaseUrl ?? `https://hr.iexcellence.net/${slug}`;
+  const hrUrl = org.hrBaseUrl ?? `${HR_DEFAULT_ORIGIN}/${slug}`;
   const databases = org.hrEnabled ? [] : await listHrDatabases(slug, hrUrl);
   const status = (on: boolean) => <span className={`chip ${on ? "" : "gray"}`}>{on ? "เชื่อมต่อแล้ว" : "ยังไม่เชื่อม"}</span>;
   const disconnect = (system: "hr" | "task") => (
