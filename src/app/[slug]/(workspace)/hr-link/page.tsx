@@ -2,7 +2,7 @@ import Link from "next/link";
 import { linkHr, unlinkHr } from "@/app/hr-actions";
 import { ActionForm } from "@/components/ActionForm";
 import { orgPath, requireMember } from "@/lib/context";
-import { HR_TARGETS, hrCustomer, hrDatabases, type HrDatabase } from "@/lib/hr";
+import { HR_TARGETS, hrDatabases, type HrDatabase } from "@/lib/hr";
 import { hrLinks } from "@/lib/hr-work";
 
 /**
@@ -40,7 +40,7 @@ export default async function HrLinkPage({
   let databases: HrDatabase[] = [];
   let apiError = false;
   try {
-    databases = await hrDatabases(hrCustomer(org.hrBaseUrl));
+    databases = await hrDatabases(org.hrBaseUrl);
   } catch (err) {
     console.error("[hr-link] HR API failed:", err);
     apiError = true;

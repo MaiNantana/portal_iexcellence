@@ -5,7 +5,19 @@
 
 /** Where the admin's HR connect form starts (the company path is added after it). */
 export const HR_DEFAULT_ORIGIN = process.env.HR_DEFAULT_ORIGIN || "https://hrtest.iexcellence.net";
-export const HR_API_URL = process.env.HR_API_URL || "https://hr.iexcellence.net/hr_api/api/";
+/**
+ * The HR URL an admin may connect: https on an iExcellence host (hr., hrtest. …) with the company path.
+ * The Portal sends HR passwords to that host's API, so it must never be an arbitrary server.
+ */
+export function isHrBaseUrl(hrBaseUrl: string) {
+  const host = new URL(hrBaseUrl).hostname;
+  return (host === "iexcellence.net" || host.endsWith(".iexcellence.net")) && hrCustomer(hrBaseUrl) !== "";
+}
+
+/** HR's API sits on the same host as the company's HR web app: https://hrtest.iexcellence.net/hr_api/api/ (HR_API_URL overrides it). */
+export function hrApiUrl(hrBaseUrl: string) {
+  return process.env.HR_API_URL || new URL("/hr_api/api/", hrBaseUrl).href;
+}
 
 /** "ixcl" from https://hrtest.iexcellence.net/ixcl/ */
 export function hrCustomer(hrBaseUrl: string) {
@@ -28,9 +40,9 @@ async function hrJson(res: Response) {
   return typeof body === "string" ? JSON.parse(body) : body;
 }
 
-export async function hrDatabases(customer: string): Promise<HrDatabase[]> {
-  const url = new URL("HrSystem/GetDbList", HR_API_URL);
-  url.search = new URLSearchParams({ userName: "", dbPort: "3307", dbCustShortName: customer, dbName: "" }).toString();
+export async function hrDatabases(hrBaseUrl: string): Promise<HrDatabase[]> {
+  const url = new URL("HrSystem/GetDbList", hrApiUrl(hrBaseUrl));
+  url.search = new URLSearchParams({ userName: "", dbPort: "3307", dbCustShortName: hrCustomer(hrBaseUrl), dbName: "" }).toString();
   const rows = await hrJson(await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(8000) }));
   return (rows as Record<string, string | null>[])
     .filter((r) => r.database_name && r.caption_name)
@@ -38,8 +50,8 @@ export async function hrDatabases(customer: string): Promise<HrDatabase[]> {
 }
 
 /** Checks HR credentials with HR's own login API; returns the HR token, or null if they're wrong. */
-export async function hrLogin(db: HrDatabase, user: string, passwd: string): Promise<string | null> {
-  const res = await fetch(new URL("GbUserLogin/ValidLogin", HR_API_URL), {
+export async function hrLogin(hrBaseUrl: string, db: HrDatabase, user: string, passwd: string): Promise<string | null> {
+  const res = await fetch(new URL("GbUserLogin/ValidLogin", hrApiUrl(hrBaseUrl)), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ header: { dbName: db.name, dbPort: db.port, userName: user }, user, passwd, dbName: db.name, dbPort: db.port, dbServer: db.server }),
@@ -59,9 +71,9 @@ export function hrTokenParts(token: string) {
 }
 
 /** EMPLOYEE_ID of an HR login, or null when the login has no employee (e.g. an HR admin account). */
-export async function hrEmployeeId(token: string): Promise<string | null> {
+export async function hrEmployeeId(hrBaseUrl: string, token: string): Promise<string | null> {
   const { user, db, port } = hrTokenParts(token);
-  const res = await fetch(new URL("CfEmployeeGeneral/GetDataFromMobile", HR_API_URL), {
+  const res = await fetch(new URL("CfEmployeeGeneral/GetDataFromMobile", hrApiUrl(hrBaseUrl)), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ dbName: db, dbPort: port, userName: user }),
@@ -87,11 +99,11 @@ export type HrApproval = {
 };
 
 /** Leave (AS) and OT requests waiting for this approver right now, as HR's own approver list shows them. */
-export async function hrPendingApprovals(token: string, employeeId: string): Promise<HrApproval[]> {
+export async function hrPendingApprovals(hrBaseUrl: string, token: string, employeeId: string): Promise<HrApproval[]> {
   const { db, port } = hrTokenParts(token);
   const lists = await Promise.all(
     (["AS", "OT"] as const).map(async (type) => {
-      const url = new URL("ApproverRequest/GetHistory", HR_API_URL);
+      const url = new URL("ApproverRequest/GetHistory", hrApiUrl(hrBaseUrl));
       url.search = new URLSearchParams({ dbName: db, dbPort: port, employeeId, type }).toString();
       const rows = await hrJson(await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(8000) }));
       if (!Array.isArray(rows)) throw new Error(`HR GetHistory ${type}: ${String(rows).slice(0, 200)}`);
