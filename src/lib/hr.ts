@@ -45,3 +45,60 @@ export async function hrLogin(db: HrDatabase, user: string, passwd: string): Pro
   // Only real accounts in the customer's database (the built-in super user gets a 2-part token).
   return result?.result === true && token.split("|").length === 4 ? token : null;
 }
+
+/** The linked HR token "user|db|port|server" split into its parts. */
+export function hrTokenParts(token: string) {
+  const [user, db, port, server] = token.split("|");
+  return { user, db, port: port || "3307", server };
+}
+
+/** EMPLOYEE_ID of an HR login, or null when the login has no employee (e.g. an HR admin account). */
+export async function hrEmployeeId(token: string): Promise<string | null> {
+  const { user, db, port } = hrTokenParts(token);
+  const res = await fetch(new URL("CfEmployeeGeneral/GetDataFromMobile", HR_API_URL), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dbName: db, dbPort: port, userName: user }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(8000),
+  });
+  const result = await hrJson(res);
+  const id = result?.data?.EMPLOYEE_ID;
+  return id === null || id === undefined ? null : String(id);
+}
+
+export type HrRequestType = "AS" | "OT";
+export type HrApproval = {
+  type: HrRequestType;
+  requestId: string;
+  employeeName: string;
+  kind: string;
+  startDate: string | null;
+  endDate: string | null;
+  requestedAt: string | null;
+};
+
+/** Leave (AS) and OT requests waiting for this approver right now, as HR's own approver list shows them. */
+export async function hrPendingApprovals(token: string, employeeId: string): Promise<HrApproval[]> {
+  const { db, port } = hrTokenParts(token);
+  const lists = await Promise.all(
+    (["AS", "OT"] as const).map(async (type) => {
+      const url = new URL("ApproverRequest/GetHistory", HR_API_URL);
+      url.search = new URLSearchParams({ dbName: db, dbPort: port, employeeId, type }).toString();
+      const rows = await hrJson(await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(8000) }));
+      if (!Array.isArray(rows)) throw new Error(`HR GetHistory ${type}: ${String(rows).slice(0, 200)}`);
+      return (rows as Record<string, unknown>[])
+        .filter((r) => r.canapprove === true)
+        .map((r) => ({
+          type,
+          requestId: String(r.requestid),
+          employeeName: String(r.employeename ?? "").trim(),
+          kind: String((type === "AS" ? r.absenttype : r.ottype) ?? (type === "AS" ? "ลางาน" : "OT")),
+          startDate: (r.startdate as string) ?? null,
+          endDate: (r.enddate as string) ?? null,
+          requestedAt: (r.requestdatetime as string) ?? null,
+        }));
+    }),
+  );
+  return lists.flat();
+}

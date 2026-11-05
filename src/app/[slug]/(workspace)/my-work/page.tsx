@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { orgPath, requireMember } from "@/lib/context";
 import { formatThaiDate } from "@/lib/portal";
+import type { HrApproval } from "@/lib/hr";
+import { getHrApprovals } from "@/lib/hr-work";
 import { getMyWork, isOverdue, taskDeepLink, workCounts, type MyTask } from "@/lib/task";
 
 const TABS = [
@@ -16,9 +18,9 @@ export default async function MyWorkPage({ params, searchParams }: { params: Pro
   const { tab: rawTab, done } = await searchParams;
   const tab = TABS.some(([k]) => k === rawTab) ? rawTab! : "tasks";
   const base = orgPath(slug);
-  const work = await getMyWork(member);
+  const [taskWork, hrApprovals] = await Promise.all([getMyWork(member), getHrApprovals(member)]);
 
-  if (!work) {
+  if (!taskWork && !hrApprovals) {
     return (
       <article className="card panel article">
         <h1>งานของฉัน</h1>
@@ -29,7 +31,9 @@ export default async function MyWorkPage({ params, searchParams }: { params: Pro
     );
   }
 
+  const work = taskWork ?? { tasks: [], approvals: [] };
   const counts = workCounts(work);
+  counts.approvals += hrApprovals?.length ?? 0;
   const showDone = done === "1";
   const tasks = (tab === "overdue" ? work.tasks.filter((t) => isOverdue(t)) : work.tasks.filter((t) => showDone || !t.isDone)).sort(byDue);
 
@@ -51,8 +55,11 @@ export default async function MyWorkPage({ params, searchParams }: { params: Pro
       <section className="card panel">
         {tab === "approvals" ? (
           <>
-            <h3>รออนุมัติ · TaskExcellence</h3>
-            {work.approvals.length === 0 && <div className="empty">ไม่มีงานรออนุมัติ</div>}
+            <h3>รออนุมัติ · HR (ลา / OT)</h3>
+            <HrApprovals slug={slug} items={hrApprovals} hrEnabled={member.org.hrEnabled} />
+            <h3 style={{ marginTop: 20 }}>รออนุมัติ · TaskExcellence</h3>
+            {!taskWork && <div className="notice">{member.org.taskEnabled ? "ติดต่อ TaskExcellence ไม่ได้" : "บริษัทยังไม่ได้เชื่อมต่อ TaskExcellence"}</div>}
+            {taskWork && work.approvals.length === 0 && <div className="empty">ไม่มีงานรออนุมัติ</div>}
             {work.approvals.map((a) => (
               <a key={`${a.taskId}:${a.stepName}`} className="workrow" href={taskDeepLink(slug, a)} target="_blank" rel="noopener noreferrer">
                 <span className="quickicon task">☑</span>
@@ -66,17 +73,6 @@ export default async function MyWorkPage({ params, searchParams }: { params: Pro
                 <span className="btn tiny light">อนุมัติ ↗</span>
               </a>
             ))}
-            <h3 style={{ marginTop: 20 }}>รออนุมัติ · HR (ลา / OT)</h3>
-            <div className="notice">
-              อนุมัติใบลาและ OT ได้ที่ HR Excellence โดยตรง ·{" "}
-              {member.org.hrEnabled ? (
-                <a className="inline-link" href={`${base}/go/hr`} target="_blank" rel="noopener noreferrer">
-                  เปิด HR ↗
-                </a>
-              ) : (
-                "บริษัทยังไม่ได้เชื่อมต่อ HR"
-              )}
-            </div>
           </>
         ) : (
           <>
@@ -87,13 +83,58 @@ export default async function MyWorkPage({ params, searchParams }: { params: Pro
                 </Link>
               </div>
             )}
-            {tasks.length === 0 && <div className="empty" style={{ marginTop: 8 }}>{tab === "overdue" ? "ไม่มีงานเกินกำหนด" : "ไม่มีงานค้าง"}</div>}
+            {!taskWork && <div className="notice">{member.org.taskEnabled ? "ติดต่อ TaskExcellence ไม่ได้" : "บริษัทยังไม่ได้เชื่อมต่อ TaskExcellence"}</div>}
+            {taskWork && tasks.length === 0 && <div className="empty" style={{ marginTop: 8 }}>{tab === "overdue" ? "ไม่มีงานเกินกำหนด" : "ไม่มีงานค้าง"}</div>}
             {tasks.map((t) => (
               <TaskRow key={t.taskId} slug={slug} task={t} />
             ))}
           </>
         )}
       </section>
+    </>
+  );
+}
+
+function HrApprovals({ slug, items, hrEnabled }: { slug: string; items: HrApproval[] | null; hrEnabled: boolean }) {
+  if (!hrEnabled) return <div className="notice">บริษัทยังไม่ได้เชื่อมต่อ HR</div>;
+  if (!items) {
+    return (
+      <div className="notice">
+        ยังดูรายการจาก HR ไม่ได้ ·{" "}
+        <Link className="inline-link" href={orgPath(slug, "/hr-link")}>
+          เชื่อมบัญชี HR
+        </Link>{" "}
+        ก่อน หรือลองใหม่อีกครั้ง
+      </div>
+    );
+  }
+  if (items.length === 0) return <div className="empty">ไม่มีใบลา / OT รออนุมัติ</div>;
+  return (
+    <>
+      {items.map((a) => (
+        <a
+          key={`${a.type}:${a.requestId}`}
+          className="workrow"
+          href={`${orgPath(slug, "/go/hr")}?to=${a.type === "AS" ? "approve-leave" : "approve-ot"}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="เปิดหน้าอนุมัติใน HR Excellence"
+        >
+          <span className="quickicon hr">{a.type === "AS" ? "◷" : "⏱"}</span>
+          <span className="wtitle">
+            <b>
+              {a.type === "AS" ? "ลางาน" : "OT"} · {a.employeeName || "-"}
+            </b>
+            <small>
+              {a.kind}
+              {a.startDate && ` · ${formatThaiDate(new Date(a.startDate))}`}
+              {a.endDate && a.endDate !== a.startDate && ` – ${formatThaiDate(new Date(a.endDate))}`}
+            </small>
+          </span>
+          {a.requestedAt && <span className="wdue">ส่งเมื่อ {formatThaiDate(new Date(a.requestedAt))}</span>}
+          <span className="btn tiny light">อนุมัติ ↗</span>
+        </a>
+      ))}
     </>
   );
 }

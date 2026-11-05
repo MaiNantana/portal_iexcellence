@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { NewsPanel } from "@/components/NewsPanel";
 import { orgPath, requireMember, type Member } from "@/lib/context";
 import { CHANNELS, getQuickEntries, getVisibleNews, pinnedEntries, toNewsItem } from "@/lib/portal";
+import { getHrApprovals } from "@/lib/hr-work";
 import { getMyWork, workCounts } from "@/lib/task";
 
 function greeting() {
@@ -72,7 +73,7 @@ export default async function HomePage({ params }: { params: Promise<{ slug: str
         </Link>
       </section>
 
-      {org.taskEnabled && (
+      {(org.taskEnabled || org.hrEnabled) && (
         <Suspense fallback={<WorkDashboard base={base} />}>
           <MyWorkDashboard member={member} base={base} />
         </Suspense>
@@ -173,7 +174,7 @@ function WorkDashboard({ base, counts, failed }: { base: string; counts?: { open
       <div className="sec-header">
         <div>
           <h3>สิ่งที่ต้องดำเนินการ</h3>
-          <p>{failed ? "ติดต่อ TaskExcellence ไม่ได้ในขณะนี้" : "งานจาก TaskExcellence ที่รอคุณอยู่ · กดเพื่อดูรายการและเปิดงานได้ทันที"}</p>
+          <p>{failed ? "ติดต่อ TaskExcellence / HR ไม่ได้ในขณะนี้" : "งานและคำขอที่รอคุณอยู่ · กดเพื่อดูรายการและเปิดงานได้ทันที"}</p>
         </div>
         <Link href={`${base}/my-work`} className="btn tiny">
           ดูทั้งหมด ›
@@ -184,7 +185,7 @@ function WorkDashboard({ base, counts, failed }: { base: string; counts?: { open
           <Link key={i.tab} href={`${base}/my-work?tab=${i.tab}`} className={`workstat ${i.warn && i.n ? "warn" : ""}`}>
             <span>
               {i.label}
-              <small>{i.tab === "approvals" ? "Task Workflow" : "มอบหมายให้ฉัน"}</small>
+              <small>{i.tab === "approvals" ? "HR ลา/OT · Task Workflow" : "มอบหมายให้ฉัน"}</small>
             </span>
             <b>{i.n ?? "…"}</b>
           </Link>
@@ -195,6 +196,9 @@ function WorkDashboard({ base, counts, failed }: { base: string; counts?: { open
 }
 
 async function MyWorkDashboard({ member, base }: { member: Member; base: string }) {
-  const work = await getMyWork(member);
-  return work ? <WorkDashboard base={base} counts={workCounts(work)} /> : <WorkDashboard base={base} failed />;
+  const [work, hr] = await Promise.all([getMyWork(member), getHrApprovals(member)]);
+  if (!work && !hr) return member.org.taskEnabled ? <WorkDashboard base={base} failed /> : null;
+  const counts = workCounts(work ?? { tasks: [], approvals: [] });
+  counts.approvals += hr?.length ?? 0;
+  return <WorkDashboard base={base} counts={counts} />;
 }

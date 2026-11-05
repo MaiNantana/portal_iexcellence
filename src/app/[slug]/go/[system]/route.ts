@@ -43,7 +43,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   });
   if (!member) return new Response("Not found", { status: 404 });
   const { org } = member;
-  if (system === "hr") return goToHr(req, member);
+  if (system === "hr") return goToHr(req, member, here.searchParams.get("to"));
   if (!org.taskEnabled) return Response.redirect(new URL(orgPath(slug), req.url), 303);
 
   if (org.taskApiKeyEnc) await connectToCompanyWorkspace(TASK_API_URL, org.taskApiKeyEnc, member.user.email);
@@ -54,11 +54,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   return handoffRedirect(target);
 }
 
+/** HR pages the Portal may open directly (PortalLogin.ashx keeps the same allow-list). */
+const HR_TARGETS = new Set(["approve-leave", "approve-ot"]);
+
 /**
  * /abc/go/hr — first time: link the HR account (/abc/hr-link). After that: HR's PortalLogin.ashx,
- * which signs the linked HR user in. Admins land in HR's back office, everyone else in self-service.
+ * which signs the linked HR user in. Admins land in HR's back office, everyone else in self-service;
+ * ?to=approve-leave|approve-ot opens the approver's leave / OT list instead.
  */
-async function goToHr(req: Request, member: Member) {
+async function goToHr(req: Request, member: Member, to: string | null) {
   const { org } = member;
   if (!org.hrEnabled || !org.hrBaseUrl) return Response.redirect(new URL(orgPath(org.slug), req.url), 303);
   const link = await db.accountLink.findUnique({
@@ -70,6 +74,7 @@ async function goToHr(req: Request, member: Member) {
     hr_token: link.externalUserId,
     hr_cust: hrCustomer(org.hrBaseUrl),
     mode: member.role === "ADMIN" ? "backoffice" : "self",
+    ...(to && HR_TARGETS.has(to) ? { to } : {}),
   });
   const target = hrAppUrl(org.hrBaseUrl, "PortalLogin.ashx");
   target.hash = new URLSearchParams({ token }).toString();

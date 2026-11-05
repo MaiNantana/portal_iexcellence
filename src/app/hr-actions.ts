@@ -49,7 +49,7 @@ async function verifyAndLink(member: Member, hrBaseUrl: string, form: FormData):
   await db.accountLink.upsert({
     where: { orgId_userId_system: { orgId: member.orgId, userId: member.userId, system: "HR" } },
     create: { orgId: member.orgId, userId: member.userId, system: "HR", externalUserId: token },
-    update: { externalUserId: token, linkedAt: new Date() },
+    update: { externalUserId: token, externalRef: null, linkedAt: new Date() },
   });
   return undefined;
 }

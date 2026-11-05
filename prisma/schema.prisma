@@ -195,6 +195,8 @@ model AccountLink {
   userId         String
   system         ExternalSystem
   externalUserId String
+  /// HR: the linked user's EMPLOYEE_ID (looked up once, for the approver lists).
+  externalRef    String?
   linkedAt       DateTime       @default(now())
 
   org  Org  @relation(fields: [orgId], references: [id], onDelete: Cascade)
