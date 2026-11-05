@@ -19,7 +19,7 @@ export default async function LauncherPage({ params, searchParams }: { params: P
   const row = (e: QuickEntry) => {
     const on = pinned.has(e.key);
     return (
-      <div className="launcher-row" key={e.key} style={editing?.key === e.key ? { borderColor: "#2c9985" } : undefined}>
+      <div className="launcher-row" key={e.key} style={editing?.key === e.key ? { borderColor: "var(--brand)" } : undefined}>
         <div className={`serviceicon ${e.kind === "task" ? "blue" : e.kind === "hr" ? "orange" : ""}`}>{e.icon}</div>
         <div className="launcher-label">
           <b>{e.name}</b>
