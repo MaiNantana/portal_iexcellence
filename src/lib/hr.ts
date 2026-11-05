@@ -1,6 +1,7 @@
 // HR Excellence: one web app per customer at https://hr.iexcellence.net/<customer>/, sharing one API.
 // Employees link their HR username once (checked by HR's own login API); the Portal keeps only the
 // resulting HR token "user|db|port|server" in AccountLink.externalUserId, never the password.
+// One HR URL can hold several databases, so a member has one AccountLink per database (externalDb).
 
 export const HR_API_URL = process.env.HR_API_URL || "https://hr.iexcellence.net/hr_api/api/";
 
@@ -13,6 +14,9 @@ export function hrAppUrl(hrBaseUrl: string, path: string) {
   const u = new URL(hrBaseUrl);
   return new URL(`/${hrCustomer(hrBaseUrl)}/${path}`, u.origin);
 }
+
+/** HR pages the Portal may open directly (HR's PortalLogin.ashx keeps the same allow-list). */
+export const HR_TARGETS = new Set(["approve-leave", "approve-ot"]);
 
 export type HrDatabase = { name: string; caption: string; port: string; server: string };
 
@@ -70,6 +74,8 @@ export async function hrEmployeeId(token: string): Promise<string | null> {
 export type HrRequestType = "AS" | "OT";
 export type HrApproval = {
   type: HrRequestType;
+  /** HR database the request lives in (the approver may be linked to several). */
+  db: string;
   requestId: string;
   employeeName: string;
   kind: string;
@@ -91,6 +97,7 @@ export async function hrPendingApprovals(token: string, employeeId: string): Pro
         .filter((r) => r.canapprove === true)
         .map((r) => ({
           type,
+          db,
           requestId: String(r.requestid),
           employeeName: String(r.employeename ?? "").trim(),
           kind: String((type === "AS" ? r.absenttype : r.ottype) ?? (type === "AS" ? "ลางาน" : "OT")),

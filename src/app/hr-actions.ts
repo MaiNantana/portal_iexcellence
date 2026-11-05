@@ -26,10 +26,11 @@ async function verifyAndLink(member: Member, hrBaseUrl: string, form: FormData):
   if (!user || !passwd) return { error: "กรอกชื่อผู้ใช้และรหัสผ่าน HR" };
 
   let token: string | null;
+  let database: HrDatabase | undefined;
   try {
     const dbs = await hrDatabases(hrCustomer(hrBaseUrl));
     if (!dbs.length) return { error: "ไม่พบฐานข้อมูล HR ของบริษัทนี้ ตรวจสอบ URL ของ HR" };
-    const database = dbs.find((d) => d.name === form.get("hrDb")) ?? (dbs.length === 1 ? dbs[0] : undefined);
+    database = dbs.find((d) => d.name === form.get("hrDb")) ?? (dbs.length === 1 ? dbs[0] : undefined);
     if (!database) return { error: "เลือกฐานข้อมูล HR" };
     token = await hrLogin(database, user, passwd);
   } catch (err) {
@@ -46,9 +47,11 @@ async function verifyAndLink(member: Member, hrBaseUrl: string, form: FormData):
   });
   if (taken && taken.userId !== member.userId) return { error: "บัญชี HR นี้เชื่อมกับผู้ใช้ Portal คนอื่นอยู่แล้ว ติดต่อ Admin" };
 
+  // One account per HR database: signing in to a database again replaces that database's account only.
+  const externalDb = database!.name;
   await db.accountLink.upsert({
-    where: { orgId_userId_system: { orgId: member.orgId, userId: member.userId, system: "HR" } },
-    create: { orgId: member.orgId, userId: member.userId, system: "HR", externalUserId: token },
+    where: { orgId_userId_system_externalDb: { orgId: member.orgId, userId: member.userId, system: "HR", externalDb } },
+    create: { orgId: member.orgId, userId: member.userId, system: "HR", externalDb, externalUserId: token },
     update: { externalUserId: token, externalRef: null, linkedAt: new Date() },
   });
   return undefined;
@@ -88,8 +91,9 @@ export async function listHrDatabases(slug: string, hrBaseUrl: string): Promise<
   }
 }
 
-export async function unlinkHr(slug: string) {
+/** Unlinks the member's HR account in one database. */
+export async function unlinkHr(slug: string, externalDb: string) {
   const member = await requireMember(slug);
-  await db.accountLink.deleteMany({ where: { orgId: member.orgId, userId: member.userId, system: "HR" } });
+  await db.accountLink.deleteMany({ where: { orgId: member.orgId, userId: member.userId, system: "HR", externalDb } });
   revalidatePath("/", "layout");
 }

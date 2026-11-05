@@ -2,7 +2,7 @@ import Link from "next/link";
 import { orgPath, requireMember } from "@/lib/context";
 import { formatThaiDate } from "@/lib/portal";
 import type { HrApproval } from "@/lib/hr";
-import { getHrApprovals } from "@/lib/hr-work";
+import { getHrApprovals, hrDbCaptions } from "@/lib/hr-work";
 import { getMyWork, isOverdue, taskDeepLink, workCounts, type MyTask } from "@/lib/task";
 
 const TABS = [
@@ -56,7 +56,7 @@ export default async function MyWorkPage({ params, searchParams }: { params: Pro
         {tab === "approvals" ? (
           <>
             <h3>รออนุมัติ · HR (ลา / OT)</h3>
-            <HrApprovals slug={slug} items={hrApprovals} hrEnabled={member.org.hrEnabled} />
+            <HrApprovals slug={slug} items={hrApprovals} hrEnabled={member.org.hrEnabled} hrBaseUrl={member.org.hrBaseUrl} />
             <h3 style={{ marginTop: 20 }}>รออนุมัติ · TaskExcellence</h3>
             {!taskWork && <div className="notice">{member.org.taskEnabled ? "ติดต่อ TaskExcellence ไม่ได้" : "บริษัทยังไม่ได้เชื่อมต่อ TaskExcellence"}</div>}
             {taskWork && work.approvals.length === 0 && <div className="empty">ไม่มีงานรออนุมัติ</div>}
@@ -95,7 +95,7 @@ export default async function MyWorkPage({ params, searchParams }: { params: Pro
   );
 }
 
-function HrApprovals({ slug, items, hrEnabled }: { slug: string; items: HrApproval[] | null; hrEnabled: boolean }) {
+async function HrApprovals({ slug, items, hrEnabled, hrBaseUrl }: { slug: string; items: HrApproval[] | null; hrEnabled: boolean; hrBaseUrl: string | null }) {
   if (!hrEnabled) return <div className="notice">บริษัทยังไม่ได้เชื่อมต่อ HR</div>;
   if (!items) {
     return (
@@ -109,13 +109,15 @@ function HrApprovals({ slug, items, hrEnabled }: { slug: string; items: HrApprov
     );
   }
   if (items.length === 0) return <div className="empty">ไม่มีใบลา / OT รออนุมัติ</div>;
+  // Name the database only when the requests come from more than one.
+  const captions = new Set(items.map((a) => a.db)).size > 1 && hrBaseUrl ? await hrDbCaptions(hrBaseUrl) : null;
   return (
     <>
       {items.map((a) => (
         <a
-          key={`${a.type}:${a.requestId}`}
+          key={`${a.db}:${a.type}:${a.requestId}`}
           className="workrow"
-          href={`${orgPath(slug, "/go/hr")}?to=${a.type === "AS" ? "approve-leave" : "approve-ot"}`}
+          href={`${orgPath(slug, "/go/hr")}?${new URLSearchParams({ to: a.type === "AS" ? "approve-leave" : "approve-ot", db: a.db })}`}
           target="_blank"
           rel="noopener noreferrer"
           title="เปิดหน้าอนุมัติใน HR Excellence"
@@ -126,6 +128,7 @@ function HrApprovals({ slug, items, hrEnabled }: { slug: string; items: HrApprov
               {a.type === "AS" ? "ลางาน" : "OT"} · {a.employeeName || "-"}
             </b>
             <small>
+              {captions && `${captions.get(a.db) ?? a.db} · `}
               {a.kind}
               {a.startDate && ` · ${formatThaiDate(new Date(a.startDate))}`}
               {a.endDate && a.endDate !== a.startDate && ` – ${formatThaiDate(new Date(a.endDate))}`}

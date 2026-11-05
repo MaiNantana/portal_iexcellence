@@ -195,6 +195,8 @@ model AccountLink {
   userId         String
   system         ExternalSystem
   externalUserId String
+  /// HR: the database the account belongs to (one HR URL can hold several; a member may link one account per database).
+  externalDb     String         @default("")
   /// HR: the linked user's EMPLOYEE_ID (looked up once, for the approver lists).
   externalRef    String?
   linkedAt       DateTime       @default(now())
@@ -202,7 +204,7 @@ model AccountLink {
   org  Org  @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([orgId, userId, system])
+  @@unique([orgId, userId, system, externalDb])
   @@unique([orgId, system, externalUserId])
   @@map("account_links")
 }

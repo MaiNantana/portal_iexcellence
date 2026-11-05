@@ -2,7 +2,7 @@ import { auth } from "@/auth";
 import { loginPath, orgPath, safeNext, type Member } from "@/lib/context";
 import { db } from "@/lib/db";
 import { portalIssuer, signHandoff } from "@/lib/handoff";
-import { hrAppUrl, hrCustomer } from "@/lib/hr";
+import { HR_TARGETS, hrAppUrl, hrCustomer } from "@/lib/hr";
 import { TASK_API_URL, TASK_BASE_URL } from "@/lib/portal";
 import { decryptSecret } from "@/lib/secrets";
 
@@ -43,7 +43,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   });
   if (!member) return new Response("Not found", { status: 404 });
   const { org } = member;
-  if (system === "hr") return goToHr(req, member, here.searchParams.get("to"));
+  if (system === "hr") return goToHr(req, member, here.searchParams.get("to"), here.searchParams.get("db"));
   if (!org.taskEnabled) return Response.redirect(new URL(orgPath(slug), req.url), 303);
 
   if (org.taskApiKeyEnc) await connectToCompanyWorkspace(TASK_API_URL, org.taskApiKeyEnc, member.user.email);
@@ -54,21 +54,22 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   return handoffRedirect(target);
 }
 
-/** HR pages the Portal may open directly (PortalLogin.ashx keeps the same allow-list). */
-const HR_TARGETS = new Set(["approve-leave", "approve-ot"]);
-
 /**
  * /abc/go/hr — first time: link the HR account (/abc/hr-link). After that: HR's PortalLogin.ashx,
  * which signs the linked HR user in. Admins land in HR's back office, everyone else in self-service;
- * ?to=approve-leave|approve-ot opens the approver's leave / OT list instead.
+ * ?to=approve-leave|approve-ot opens the approver's leave / OT list instead. Members linked to
+ * several HR databases pick one: ?db=<name>, or /abc/hr-link lists them to choose from.
  */
-async function goToHr(req: Request, member: Member, to: string | null) {
+async function goToHr(req: Request, member: Member, to: string | null, dbName: string | null) {
   const { org } = member;
   if (!org.hrEnabled || !org.hrBaseUrl) return Response.redirect(new URL(orgPath(org.slug), req.url), 303);
-  const link = await db.accountLink.findUnique({
-    where: { orgId_userId_system: { orgId: org.id, userId: member.userId, system: "HR" } },
-  });
-  if (!link) return Response.redirect(new URL(orgPath(org.slug, "/hr-link"), req.url), 303);
+  const links = await db.accountLink.findMany({ where: { orgId: org.id, userId: member.userId, system: "HR" } });
+  const link = links.length === 1 ? links[0] : links.find((l) => l.externalDb === dbName);
+  if (!link) {
+    const pick = new URL(orgPath(org.slug, "/hr-link"), req.url);
+    if (links.length && to && HR_TARGETS.has(to)) pick.searchParams.set("to", to);
+    return Response.redirect(pick, 303);
+  }
 
   const token = await signHandoff(member, "hrexcellence", {
     hr_token: link.externalUserId,
