@@ -212,4 +212,12 @@ input[type=checkbox],input[type=radio]{accent-color:var(--green)}
 .workrow .wtitle small{color:var(--muted);font-size:10.5px}
 .workrow .wdue{font-size:10.5px;color:var(--muted);white-space:nowrap}
 .workrow .wdue.late{color:var(--red);font-weight:700}
-@media (max-width:640px){.workstats{grid-template-columns:1fr}.workrow{flex-wrap:wrap}}
+@media (max-width:640px){
+  .workstats{grid-template-columns:1fr}
+  .workrow{flex-wrap:wrap}
+  .workrow .quickicon{flex:0 0 30px;align-self:flex-start}
+  .workrow .wtitle{flex:1 0 calc(100% - 42px);overflow-wrap:anywhere}
+  .workrow .wtitle b{overflow:visible;text-overflow:clip;white-space:normal}
+  .workrow .wdue{white-space:normal;overflow-wrap:anywhere}
+  .workrow .chip{max-width:100%;overflow-wrap:anywhere}
+}
