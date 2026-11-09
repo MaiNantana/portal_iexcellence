@@ -21,6 +21,14 @@ export function loginPath(next: string) {
   return `${slug ? orgPath(slug, "/login") : "/"}?next=${encodeURIComponent(next)}`;
 }
 
+/**
+ * Redirect from a route handler to a page on this site. The Location stays relative because
+ * behind IIS `req.url` reads https://localhost:3000, so it can't be used to build a URL.
+ */
+export function seeOther(path: string) {
+  return new Response(null, { status: 303, headers: { Location: path } });
+}
+
 /** The signed-in user, or null. */
 export async function currentUser() {
   const session = await auth();

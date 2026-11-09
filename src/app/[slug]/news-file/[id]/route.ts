@@ -1,5 +1,5 @@
 import { auth } from "@/auth";
-import { loginPath } from "@/lib/context";
+import { loginPath, seeOther } from "@/lib/context";
 import { db } from "@/lib/db";
 import { isInlineImage } from "@/lib/news-files";
 import { newsWhere } from "@/lib/portal";
@@ -8,7 +8,7 @@ import { newsWhere } from "@/lib/portal";
 export async function GET(req: Request, { params }: { params: Promise<{ slug: string; id: string }> }) {
   const { slug, id } = await params;
   const session = await auth();
-  if (!session?.user?.id) return Response.redirect(new URL(loginPath(new URL(req.url).pathname), req.url), 303);
+  if (!session?.user?.id) return seeOther(loginPath(new URL(req.url).pathname));
   const member = await db.membership.findFirst({
     where: { userId: session.user.id, org: { slug } },
     include: { org: true, user: true },
