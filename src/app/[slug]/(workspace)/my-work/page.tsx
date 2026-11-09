@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { ArrowUpRight } from "lucide-react";
+import { AppIcon } from "@/components/AppIcon";
 import { orgPath, requireMember } from "@/lib/context";
 import { formatThaiDate } from "@/lib/portal";
 import type { HrApproval } from "@/lib/hr";
@@ -62,7 +64,7 @@ export default async function MyWorkPage({ params, searchParams }: { params: Pro
             {taskWork && work.approvals.length === 0 && <div className="empty">ไม่มีงานรออนุมัติ</div>}
             {work.approvals.map((a) => (
               <a key={`${a.taskId}:${a.stepName}`} className="workrow" href={taskDeepLink(slug, a)} target="_blank" rel="noopener noreferrer">
-                <span className="quickicon task">☑</span>
+                <span className="quickicon task"><AppIcon name="task" size={18} /></span>
                 <span className="wtitle">
                   <b>{a.title || "(ไม่มีชื่อ)"}</b>
                   <small>
@@ -70,7 +72,7 @@ export default async function MyWorkPage({ params, searchParams }: { params: Pro
                   </small>
                 </span>
                 {a.submittedAt && <span className="wdue">ส่งเมื่อ {formatThaiDate(new Date(a.submittedAt))}</span>}
-                <span className="btn tiny light">อนุมัติ ↗</span>
+                <span className="btn tiny light">อนุมัติ <ArrowUpRight size={14} aria-hidden="true" /></span>
               </a>
             ))}
           </>
@@ -122,7 +124,7 @@ async function HrApprovals({ slug, items, hrEnabled, hrBaseUrl }: { slug: string
           rel="noopener noreferrer"
           title="เปิดหน้าอนุมัติใน HR Excellence"
         >
-          <span className="quickicon hr">{a.type === "AS" ? "◷" : "⏱"}</span>
+          <span className="quickicon hr"><AppIcon name={a.type === "AS" ? "calendar" : "hr"} size={18} /></span>
           <span className="wtitle">
             <b>
               {a.type === "AS" ? "ลางาน" : "OT"} · {a.employeeName || "-"}
@@ -135,7 +137,7 @@ async function HrApprovals({ slug, items, hrEnabled, hrBaseUrl }: { slug: string
             </small>
           </span>
           {a.requestedAt && <span className="wdue">ส่งเมื่อ {formatThaiDate(new Date(a.requestedAt))}</span>}
-          <span className="btn tiny light">อนุมัติ ↗</span>
+          <span className="btn tiny light">อนุมัติ <ArrowUpRight size={14} aria-hidden="true" /></span>
         </a>
       ))}
     </>
@@ -153,7 +155,7 @@ function TaskRow({ slug, task }: { slug: string; task: MyTask }) {
   const due = task.dueDate ? new Date(task.dueDate) : null;
   return (
     <a className="workrow" href={taskDeepLink(slug, task)} target="_blank" rel="noopener noreferrer" title="เปิดรายละเอียดงานใน TaskExcellence">
-      <span className="quickicon task">☑</span>
+      <span className="quickicon task"><AppIcon name="task" size={18} /></span>
       <span className="wtitle">
         <b>{task.title || "(ไม่มีชื่อ)"}</b>
         <small>
@@ -166,7 +168,7 @@ function TaskRow({ slug, task }: { slug: string; task: MyTask }) {
         </span>
       )}
       {due && !Number.isNaN(due.getTime()) && <span className={`wdue ${late ? "late" : ""}`}>{late ? "เกินกำหนด " : "กำหนด "}{formatThaiDate(due)}</span>}
-      <span className="btn tiny light">เปิด ↗</span>
+      <span className="btn tiny light">เปิด <ArrowUpRight size={14} aria-hidden="true" /></span>
     </a>
   );
 }

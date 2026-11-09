@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { linkHr, unlinkHr } from "@/app/hr-actions";
 import { ActionForm } from "@/components/ActionForm";
+import { ConfirmButton } from "@/components/ConfirmButton";
 import { orgPath, requireMember } from "@/lib/context";
 import { HR_TARGETS, hrDatabases, type HrDatabase } from "@/lib/hr";
 import { hrLinks } from "@/lib/hr-work";
@@ -93,7 +94,7 @@ export default async function HrLinkPage({
               <small>ผู้ใช้ HR {l.externalUserId.split("|")[0]}</small>
             </span>
             <form action={unlinkHr.bind(null, slug, l.externalDb)}>
-              <button className="btn tiny">ยกเลิกการเชื่อม</button>
+              <ConfirmButton className="btn tiny" message={`ยกเลิกการเชื่อมบัญชี HR ของ ${caption(l.externalDb)}? ต้องยืนยันรหัสผ่าน HR ใหม่ถ้าจะเชื่อมอีกครั้ง`}>ยกเลิกการเชื่อม</ConfirmButton>
             </form>
             <a className="btn tiny primary" href={open(l.externalDb)} target="_blank" rel="noopener noreferrer">
               เปิด HR ↗

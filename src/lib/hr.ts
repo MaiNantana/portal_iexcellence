@@ -30,7 +30,7 @@ export function hrAppUrl(hrBaseUrl: string, path: string) {
 }
 
 /** HR pages the Portal may open directly (HR's PortalLogin.ashx keeps the same allow-list). */
-export const HR_TARGETS = new Set(["approve-leave", "approve-ot"]);
+export const HR_TARGETS = new Set(["approve-leave", "approve-ot", "payslip"]);
 
 export type HrDatabase = { name: string; caption: string; port: string; server: string };
 
@@ -122,4 +122,42 @@ export async function hrPendingApprovals(hrBaseUrl: string, token: string, emplo
     }),
   );
   return lists.flat();
+}
+
+export type HrLeaveQuota = { name: string; used: number; quota: number };
+
+/** The employee's leave for a year, one row per leave type, as HR's own mobile screens show it. */
+export async function hrLeaveQuota(hrBaseUrl: string, token: string, employeeId: string, year: number): Promise<HrLeaveQuota[]> {
+  const { db, port } = hrTokenParts(token);
+  const res = await fetch(new URL("RptAbsentByEmpStatus/GetAbsentQuota", hrApiUrl(hrBaseUrl)), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dbName: db, dbPort: port, employeeId, year }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(8000),
+  });
+  const rows = await hrJson(res);
+  if (!Array.isArray(rows)) throw new Error(`HR GetAbsentQuota: ${String(rows).slice(0, 200)}`);
+  return (rows as Record<string, unknown>[]).map((r) => ({
+    name: String(r.absenttypename ?? "").trim(),
+    used: Number(r.absentspent) || 0,
+    quota: Number(r.absentquota) || 0,
+  }));
+}
+
+export type HrPayPeriod = { start: string; end: string };
+
+/** The employee's closed pay periods in a year: dates only, never amounts. */
+export async function hrPayPeriods(hrBaseUrl: string, token: string, employeeId: string, year: number): Promise<HrPayPeriod[]> {
+  const { db, port } = hrTokenParts(token);
+  const res = await fetch(new URL("RptPeriod/GetPeriodListLiff", hrApiUrl(hrBaseUrl)), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dbName: db, dbPort: port, eid: employeeId, year }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(8000),
+  });
+  const rows = (await hrJson(res))?.data;
+  if (!Array.isArray(rows)) throw new Error("HR GetPeriodListLiff: no data");
+  return (rows as Record<string, string>[]).map((r) => ({ start: r.startdate, end: r.enddate }));
 }

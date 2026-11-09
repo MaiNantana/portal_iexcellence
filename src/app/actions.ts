@@ -3,6 +3,7 @@
 // Tenant actions take the org slug explicitly (bound argument, or the hidden "org" form field)
 // and re-check membership for that org, so a request can never act on a company you don't belong to.
 
+import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -11,7 +12,8 @@ import { db } from "@/lib/db";
 import { orgPath, requireAdmin, requireMember, requireUser, slugFrom } from "@/lib/context";
 import { normalizeEmail, syncMemberships } from "@/lib/identity";
 import { sendMail } from "@/lib/mail";
-import { CHANNELS, DEPARTMENTS, getQuickEntries, newsWhere, pinnedEntries, safeHttpsUrl, SERVICE_ICONS } from "@/lib/portal";
+import { readNewsUploads } from "@/lib/news-files";
+import { CHANNELS, getDepartments, getQuickEntries, newsWhere, parseBangkokInput, pinnedEntries, safeHttpsUrl, SERVICE_ICONS } from "@/lib/portal";
 import { getTaskProjects } from "@/lib/task";
 
 export type FormState = { error?: string; ok?: string } | undefined;
@@ -102,25 +104,108 @@ const newsSchema = z.object({
   audience: z.string().trim().min(1).max(40),
 });
 
-export async function createNews(_: FormState, form: FormData): Promise<FormState> {
-  const admin = await requireAdmin(slugFrom(form));
-  const parsed = newsSchema.safeParse({
+function parseNews(form: FormData) {
+  return newsSchema.safeParse({
     title: form.get("title"),
     body: form.get("body"),
     channel: form.get("channel"),
     audience: form.get("audience"),
   });
-  if (!parsed.success) return { error: "กรุณากรอกหัวข้อ เนื้อหา และเลือก Channel" };
-  await db.news.create({
-    data: {
-      ...parsed.data,
-      orgId: admin.orgId,
-      requiresAck: form.get("requiresAck") === "on",
-      authorName: admin.user.name ?? admin.user.email,
-    },
-  });
+}
+
+const TX_OPTIONS = { timeout: 60_000 };
+const NEWS_INPUT_ERROR = "กรุณากรอกหัวข้อ เนื้อหา และเลือก Channel กับกลุ่มผู้รับให้ถูกต้อง";
+
+async function validAudience(orgId: string, audience: string) {
+  return audience === "all" || audience in (await getDepartments(orgId));
+}
+
+export async function createNews(_: FormState, form: FormData): Promise<FormState> {
+  const admin = await requireAdmin(slugFrom(form));
+  const parsed = parseNews(form);
+  if (!parsed.success || !(await validAudience(admin.orgId, parsed.data.audience))) return { error: NEWS_INPUT_ERROR };
+
+  const publishAt = parseBangkokInput(form.get("publishAt"));
+  const expiresAt = parseBangkokInput(form.get("expiresAt"));
+  if (publishAt === undefined || expiresAt === undefined) return { error: "วันเวลาไม่ถูกต้อง" };
+  const now = new Date();
+  const publishedAt = publishAt && publishAt > now ? publishAt : now;
+  if (expiresAt && expiresAt <= publishedAt) return { error: "วันหมดอายุต้องอยู่หลังวันเผยแพร่" };
+
+  const uploads = await readNewsUploads(form, 0);
+  if ("error" in uploads) return uploads;
+
+  await db.$transaction(async (tx) => {
+    const news = await tx.news.create({
+      data: {
+        ...parsed.data,
+        orgId: admin.orgId,
+        requiresAck: form.get("requiresAck") === "on",
+        notifyEmail: form.get("notifyEmail") === "on",
+        authorName: admin.user.name ?? admin.user.email,
+        publishedAt,
+        expiresAt,
+      },
+    });
+    // One insert per file: a single statement holding every file could exceed MariaDB's max_allowed_packet.
+    for (const file of uploads.files) await tx.newsAttachment.create({ data: { ...file, newsId: news.id } });
+  }, TX_OPTIONS);
   revalidatePath("/", "layout");
-  return { ok: "เผยแพร่ใน Portal แล้ว" };
+  return { ok: publishedAt > now ? "ตั้งเวลาเผยแพร่แล้ว" : "เผยแพร่ใน Portal แล้ว" };
+}
+
+/** Browsers submit textarea line breaks as CRLF, so compare text with line endings normalized. */
+const sameText = (a: string, b: string) => a.replace(/\r\n/g, "\n") === b.replace(/\r\n/g, "\n");
+
+/** Changing the title, body or files of a live post clears every acknowledgement, so people must acknowledge the new content. */
+export async function updateNews(_: FormState, form: FormData): Promise<FormState> {
+  const slug = slugFrom(form);
+  const admin = await requireAdmin(slug);
+  const parsed = parseNews(form);
+  if (!parsed.success || !(await validAudience(admin.orgId, parsed.data.audience))) return { error: NEWS_INPUT_ERROR };
+  const news = await db.news.findFirst({
+    where: { id: String(form.get("id") ?? ""), orgId: admin.orgId },
+    include: { attachments: { select: { id: true } } },
+  });
+  if (!news) return { error: "ไม่พบประกาศนี้ อาจถูกลบไปแล้ว" };
+
+  const now = new Date();
+  const wasLive = news.publishedAt <= now;
+  const publishAt = parseBangkokInput(form.get("publishAt"));
+  const expiresAt = parseBangkokInput(form.get("expiresAt"));
+  if (publishAt === undefined || expiresAt === undefined) return { error: "วันเวลาไม่ถูกต้อง" };
+  // A live post keeps its publish date (the form doesn't offer it); a scheduled one can move, or go out now when cleared.
+  const publishedAt = wasLive ? news.publishedAt : publishAt && publishAt > now ? publishAt : now;
+  if (expiresAt && expiresAt <= publishedAt) return { error: "วันหมดอายุต้องอยู่หลังวันเผยแพร่" };
+
+  const removeIds = form.getAll("removeFile").map(String).filter((id) => news.attachments.some((a) => a.id === id));
+  const uploads = await readNewsUploads(form, news.attachments.length - removeIds.length);
+  if ("error" in uploads) return uploads;
+
+  const textChanged = !sameText(news.title, parsed.data.title) || !sameText(news.body, parsed.data.body);
+  const contentChanged = textChanged || removeIds.length > 0 || uploads.files.length > 0;
+  const editedLive = wasLive && contentChanged;
+  const notify = form.get("notifyEmail") === "on";
+
+  await db.$transaction(async (tx) => {
+    await tx.news.update({
+      where: { id: news.id },
+      data: {
+        ...parsed.data,
+        requiresAck: form.get("requiresAck") === "on",
+        publishedAt,
+        expiresAt,
+        ...(editedLive ? { editedAt: now } : {}),
+        // Not out yet: the checkbox decides. Already out: only a real edit sends another email.
+        ...(!wasLive ? { notifyEmail: notify, notifiedAt: null } : editedLive && notify ? { notifyEmail: true, notifiedAt: null } : {}),
+      },
+    });
+    if (removeIds.length) await tx.newsAttachment.deleteMany({ where: { id: { in: removeIds }, newsId: news.id } });
+    for (const file of uploads.files) await tx.newsAttachment.create({ data: { ...file, newsId: news.id } });
+    if (editedLive) await tx.newsAck.deleteMany({ where: { newsId: news.id } });
+  }, TX_OPTIONS);
+  revalidatePath("/", "layout");
+  redirect(orgPath(slug, "/admin?tab=news"));
 }
 
 export async function deleteNews(slug: string, id: string) {
@@ -135,7 +220,7 @@ const serviceSchema = z.object({
   icon: z.string().refine((i) => i in SERVICE_ICONS),
   project: z.string().regex(/^[^|]+\|[^|]+$/),
   openMode: z.enum(["board", "form"]),
-  audience: z.string().refine((a) => a === "all" || a in DEPARTMENTS),
+  audience: z.string().trim().min(1).max(40),
 });
 
 /** Maps a Portal service to a Task project the admin can see in Task. */
@@ -149,7 +234,7 @@ export async function createService(_: FormState, form: FormData): Promise<FormS
     openMode: form.get("openMode"),
     audience: form.get("audience"),
   });
-  if (!parsed.success) return { error: "กรอกชื่อบริการ และเลือก Project ใน Task" };
+  if (!parsed.success || !(await validAudience(admin.orgId, parsed.data.audience))) return { error: "กรอกชื่อบริการ และเลือก Project ใน Task" };
   const [workspaceId, projectId] = parsed.data.project.split("|");
   const workspaces = await getTaskProjects(admin);
   if (!workspaces) return { error: "ติดต่อ TaskExcellence ไม่ได้ ลองใหม่อีกครั้ง" };
@@ -199,6 +284,56 @@ export async function setMemberRole(slug: string, membershipId: string, role: "A
   revalidatePath("/", "layout");
 }
 
+export async function setMemberDepartment(slug: string, membershipId: string, form: FormData) {
+  const admin = await requireAdmin(slug);
+  const department = String(form.get("department") ?? "");
+  if (department && !(department in (await getDepartments(admin.orgId)))) return;
+  await db.membership.updateMany({ where: { id: membershipId, orgId: admin.orgId }, data: { department: department || null } });
+  revalidatePath("/", "layout");
+}
+
+const departmentName = z.string().trim().min(1).max(60);
+
+async function departmentNameTaken(orgId: string, name: string, exceptKey?: string) {
+  const found = await db.department.findUnique({ where: { orgId_name: { orgId, name } } });
+  return !!found && found.key !== exceptKey;
+}
+
+export async function createDepartment(_: FormState, form: FormData): Promise<FormState> {
+  const admin = await requireAdmin(slugFrom(form));
+  const name = departmentName.safeParse(form.get("name"));
+  if (!name.success) return { error: "กรุณากรอกชื่อแผนก (ไม่เกิน 60 ตัวอักษร)" };
+  if (await departmentNameTaken(admin.orgId, name.data)) return { error: "มีแผนกชื่อนี้แล้ว" };
+  await db.department.create({ data: { orgId: admin.orgId, key: `d${randomBytes(5).toString("hex")}`, name: name.data } });
+  revalidatePath("/", "layout");
+  return { ok: `เพิ่มแผนก ${name.data} แล้ว` };
+}
+
+export async function renameDepartment(_: FormState, form: FormData): Promise<FormState> {
+  const slug = slugFrom(form);
+  const admin = await requireAdmin(slug);
+  const key = String(form.get("key") ?? "");
+  const name = departmentName.safeParse(form.get("name"));
+  if (!name.success) return { error: "กรุณากรอกชื่อแผนก (ไม่เกิน 60 ตัวอักษร)" };
+  if (await departmentNameTaken(admin.orgId, name.data, key)) return { error: "มีแผนกชื่อนี้แล้ว" };
+  await db.department.updateMany({ where: { orgId: admin.orgId, key }, data: { name: name.data } });
+  revalidatePath("/", "layout");
+  redirect(orgPath(slug, "/admin?tab=departments"));
+}
+
+/** Members and pending invitations fall back to "no department"; a department that news or services still target can't go. */
+export async function deleteDepartment(slug: string, key: string) {
+  const admin = await requireAdmin(slug);
+  const where = { orgId: admin.orgId, audience: key };
+  if ((await db.news.count({ where })) + (await db.service.count({ where })) > 0) return;
+  await db.$transaction([
+    db.membership.updateMany({ where: { orgId: admin.orgId, department: key }, data: { department: null } }),
+    db.invitation.updateMany({ where: { orgId: admin.orgId, department: key }, data: { department: null } }),
+    db.department.deleteMany({ where: { orgId: admin.orgId, key } }),
+  ]);
+  revalidatePath("/", "layout");
+}
+
 const inviteSchema = z.object({
   role: z.enum(["ADMIN", "EMPLOYEE"]),
   department: z.string().trim().max(40),
@@ -209,6 +344,7 @@ export async function inviteMember(_: FormState, form: FormData): Promise<FormSt
   const email = normalizeEmail(form.get("email"));
   const parsed = inviteSchema.safeParse({ role: form.get("role"), department: form.get("department") ?? "" });
   if (!email || !parsed.success) return { error: "กรุณากรอกอีเมลให้ถูกต้อง" };
+  if (parsed.data.department && !(parsed.data.department in (await getDepartments(admin.orgId)))) return { error: "ไม่พบแผนกนี้" };
   if (await db.membership.findFirst({ where: { orgId: admin.orgId, user: { email } } })) {
     return { error: "อีเมลนี้เป็นสมาชิกของบริษัทอยู่แล้ว" };
   }

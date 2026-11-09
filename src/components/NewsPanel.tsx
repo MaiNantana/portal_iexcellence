@@ -1,10 +1,11 @@
 "use client";
 
+import { ArrowUpRight, Bell, CalendarDays, ChevronDown, ChevronRight, ChevronUp, Factory, Megaphone, Monitor, Paperclip, Users, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import type { NewsItem } from "@/lib/portal";
 
-const ICONS: Record<string, string> = { it: "⌘", events: "◫" };
+const ICONS: Record<string, LucideIcon> = { hr: Users, it: Monitor, events: CalendarDays, production: Factory };
 
 export function NewsPanel({ items, channels, base }: { items: NewsItem[]; channels: Record<string, string>; base: string }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -31,12 +32,13 @@ export function NewsPanel({ items, channels, base }: { items: NewsItem[]; channe
         <div className="news-actions">
           {pending.length > 0 && (
             <Link href={`${base}/news/${pending[0].id}`} className="news-ack-shortcut" title={`${pending.length} ประกาศที่ยังไม่รับทราบ`}>
-              <span aria-hidden="true">♧</span>
+              <Bell size={15} aria-hidden="true" />
               {pending.length}
             </Link>
           )}
           <button className="btn tiny" type="button" aria-expanded={!collapsed} onClick={() => setCollapsed(!collapsed)}>
-            {collapsed ? "แสดงข่าวสาร ↓" : "ยุบข่าวสาร ↑"}
+            {collapsed ? "แสดงข่าวสาร" : "ยุบข่าวสาร"}
+            {collapsed ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronUp size={14} aria-hidden="true" />}
           </button>
         </div>
       </div>
@@ -45,10 +47,10 @@ export function NewsPanel({ items, channels, base }: { items: NewsItem[]; channe
         <div className="news-condensed card">
           {featured ? (
             <div className="news-pinned">
-              <span className="pin-icon" aria-hidden="true">!</span>
+              <span className="pin-icon" aria-hidden="true"><Megaphone size={20} strokeWidth={1.75} /></span>
               <div className="pin-body">
                 <span className={`chip ${featuredPending ? "warn" : ""}`}>
-                  {featuredPending ? "● ประกาศสำคัญ · ต้องรับทราบ" : featured.requiresAck ? "✓ รับทราบแล้ว" : "ข่าวสารล่าสุด"}
+                  {featuredPending ? (featured.edited ? "มีการแก้ไข · ต้องรับทราบ" : "ประกาศสำคัญ · ต้องรับทราบ") : featured.requiresAck ? "รับทราบแล้ว" : "ข่าวสารล่าสุด"}
                 </span>
                 <strong>{featured.title}</strong>
                 <p>{featured.body}</p>
@@ -57,7 +59,7 @@ export function NewsPanel({ items, channels, base }: { items: NewsItem[]; channe
                 </small>
               </div>
               <Link href={`${base}/news/${featured.id}`} className="btn primary tiny">
-                {featuredPending ? "อ่านและรับทราบ ↗" : "อ่านประกาศ ↗"}
+                {featuredPending ? "อ่านและรับทราบ" : "อ่านประกาศ"} <ArrowUpRight size={14} aria-hidden="true" />
               </Link>
             </div>
           ) : (
@@ -77,7 +79,8 @@ export function NewsPanel({ items, channels, base }: { items: NewsItem[]; channe
                     setChannel("all");
                   }}
                 >
-                  {expanded ? "แสดงแบบย่อ ↑" : "ดูข่าวทั้งหมด ↓"}
+                  {expanded ? "แสดงแบบย่อ" : "ดูข่าวทั้งหมด"}
+                  {expanded ? <ChevronUp size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}
                 </button>
               </div>
               {expanded && (
@@ -91,18 +94,25 @@ export function NewsPanel({ items, channels, base }: { items: NewsItem[]; channe
               )}
               <div className="news-items-list">
                 {shown.length ? (
-                  shown.map((n) => (
+                  shown.map((n) => {
+                    const Icon = ICONS[n.channel] ?? Megaphone;
+                    return (
                     <Link key={n.id} href={`${base}/news/${n.id}`} className="news-row">
-                      <div className="news-ic">{ICONS[n.channel] ?? "▣"}</div>
+                      <div className="news-ic"><Icon size={17} strokeWidth={1.75} aria-hidden="true" /></div>
                       <div className="news-row-copy">
-                        <b>{n.title}</b>
+                        <b>
+                          {n.hasFiles && <Paperclip size={13} aria-label="มีไฟล์แนบ" style={{ marginRight: 4, verticalAlign: -2 }} />}
+                          {n.title}
+                        </b>
                         <small>
                           {channels[n.channel] ?? n.channel} · {n.date}
                         </small>
                       </div>
-                      <span className="news-row-arrow">›</span>
+                      {n.requiresAck && !n.acked && <span className="chip warn">{n.edited ? "แก้ไขแล้ว · รอรับทราบ" : "รอรับทราบ"}</span>}
+                      <ChevronRight className="news-row-arrow" size={17} aria-hidden="true" />
                     </Link>
-                  ))
+                    );
+                  })
                 ) : (
                   <div className="empty" style={{ gridColumn: "1/-1", margin: "10px 0" }}>ไม่มีข่าวใน Channel นี้</div>
                 )}

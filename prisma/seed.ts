@@ -45,6 +45,10 @@ async function main() {
     create: { orgId: abc.id, domain: "abc.test", verifyToken: "iexcellence-verify=dev", verifiedAt: new Date() },
   });
 
+  for (const [key, name] of [["hr", "ฝ่ายบุคคล"], ["it", "ฝ่าย IT"], ["production", "ฝ่ายผลิต"]]) {
+    await db.department.upsert({ where: { orgId_key: { orgId: abc.id, key } }, update: {}, create: { orgId: abc.id, key, name } });
+  }
+
   const pw = await hash(DEV_PASSWORD);
   await devUser(abc.id, "admin@abc.test", "Somchai Admin", "ADMIN", "it", pw);
   await devUser(abc.id, "employee@abc.test", "Siriporn Staff", "EMPLOYEE", "production", pw);

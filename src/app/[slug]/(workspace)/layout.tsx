@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ArrowLeftRight, Bell, LogOut, Settings } from "lucide-react";
 import { logout, switchOrg } from "@/app/actions";
 import { MobileDock, TopNav } from "@/components/NavLinks";
 import { orgPath, requireMember } from "@/lib/context";
@@ -33,11 +34,13 @@ export default async function TenantLayout({ children, params }: { children: Rea
               className="iconbtn"
               title={pending.length ? `${pending.length} ประกาศที่ยังไม่รับทราบ` : "ไม่มีประกาศที่ต้องรับทราบ"}
             >
-              ♧{pending.length > 0 && <span className="dot" />}
+              <Bell size={18} strokeWidth={1.75} aria-hidden="true" />
+              {pending.length > 0 && <span className="dot" />}
             </Link>
             {isAdmin && (
               <Link href={`${base}/admin`} className="iconbtn adminbtn" title="จัดการบริษัท: สมาชิก เชิญคน การเชื่อมต่อ">
-                ⚙<span>จัดการบริษัท</span>
+                <Settings size={17} strokeWidth={1.75} aria-hidden="true" />
+                <span>จัดการบริษัท</span>
               </Link>
             )}
             {orgs.length > 1 && (
@@ -47,7 +50,7 @@ export default async function TenantLayout({ children, params }: { children: Rea
                     <option key={org.id} value={org.id}>{org.name}</option>
                   ))}
                 </select>
-                <button className="iconbtn" title="สลับบริษัท">⇄</button>
+                <button className="iconbtn" title="สลับบริษัท" aria-label="สลับบริษัท"><ArrowLeftRight size={17} strokeWidth={1.75} aria-hidden="true" /></button>
               </form>
             )}
             <div className="userchip">
@@ -55,7 +58,7 @@ export default async function TenantLayout({ children, params }: { children: Rea
               <small>{isAdmin ? "Admin" : "Employee"}</small>
             </div>
             <form action={logout.bind(null, slug)}>
-              <button className="iconbtn" title="ออกจากระบบ" aria-label="ออกจากระบบ">⎋</button>
+              <button className="iconbtn" title="ออกจากระบบ" aria-label="ออกจากระบบ"><LogOut size={17} strokeWidth={1.75} aria-hidden="true" /></button>
             </form>
           </div>
         </div>

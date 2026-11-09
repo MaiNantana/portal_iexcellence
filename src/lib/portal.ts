@@ -1,4 +1,5 @@
 import type { AppLink, News, Service } from "@prisma/client";
+import { cache } from "react";
 import { db } from "@/lib/db";
 import type { Member } from "@/lib/context";
 
@@ -10,14 +11,32 @@ export const CHANNELS: Record<string, string> = {
   production: "ฝ่ายผลิต",
 };
 
-export const DEPARTMENTS: Record<string, string> = {
-  hr: "ฝ่ายบุคคล",
-  it: "ฝ่าย IT",
-  production: "ฝ่ายผลิต",
-};
+/** The company's departments (key → name), once per request. */
+export const getDepartments = cache(async (orgId: string): Promise<Record<string, string>> => {
+  const rows = await db.department.findMany({ where: { orgId }, orderBy: { name: "asc" } });
+  return Object.fromEntries(rows.map((d) => [d.key, d.name]));
+});
 
 export function channelLabel(channel: string) {
   return CHANNELS[channel] ?? channel;
+}
+
+/** "2026-11-09T14:30" as Bangkok time (a datetime-local value): null when blank, undefined when invalid. */
+export function parseBangkokInput(raw: FormDataEntryValue | null): Date | null | undefined {
+  const value = String(raw ?? "").trim();
+  if (!value) return null;
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return undefined;
+  const date = new Date(`${value}:00+07:00`);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+/** A date as a datetime-local value in Bangkok time. */
+export function toBangkokInput(d: Date | null | undefined) {
+  return d ? new Date(d.getTime() + 7 * 3_600_000).toISOString().slice(0, 16) : "";
+}
+
+export function formatThaiDateTime(d: Date) {
+  return new Intl.DateTimeFormat("th-TH", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" }).format(d);
 }
 
 export function formatThaiDate(d: Date) {
@@ -39,15 +58,23 @@ export function safeHttpsUrl(raw: string | null | undefined) {
 export const TASK_BASE_URL = process.env.TASK_BASE_URL || "https://pmo.iexcellence.cloud/";
 export const TASK_API_URL = process.env.TASK_API_URL || "https://pmo.iexcellence.cloud:8443";
 
-/** Admins see every post; everyone else sees company-wide posts plus their department's. */
+/** Live posts only (not scheduled for later, not expired). Admins see every audience; everyone else company-wide posts plus their department's. */
 export function newsWhere(member: Member) {
-  return member.role === "ADMIN"
-    ? { orgId: member.orgId }
-    : { orgId: member.orgId, audience: { in: ["all", member.department ?? "all"] } };
+  const now = new Date();
+  return {
+    orgId: member.orgId,
+    publishedAt: { lte: now },
+    OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+    ...(member.role === "ADMIN" ? {} : { audience: { in: ["all", member.department ?? "all"] } }),
+  };
 }
 
 export async function getVisibleNews(member: Member) {
-  const news = await db.news.findMany({ where: newsWhere(member), orderBy: { publishedAt: "desc" } });
+  const news = await db.news.findMany({
+    where: newsWhere(member),
+    orderBy: { publishedAt: "desc" },
+    include: { _count: { select: { attachments: true } } },
+  });
   const acks = await db.newsAck.findMany({
     where: { userId: member.userId, newsId: { in: news.map((n) => n.id) } },
     select: { newsId: true },
@@ -66,7 +93,7 @@ export type QuickEntry = {
   linkId?: string;
 };
 
-/** Icons a company service can use (key → glyph); the key is what's stored. */
+/** Icons a company service can use (key → glyph for the admin's dropdown); the key is what's stored and what AppIcon draws. */
 export const SERVICE_ICONS: Record<string, string> = {
   wrench: "🔧",
   folder: "📁",
@@ -104,11 +131,11 @@ export async function getQuickEntries(member: Member): Promise<QuickEntry[]> {
   ]);
   const entries: QuickEntry[] = [];
   if (org.hrEnabled && org.hrBaseUrl) {
-    entries.push({ key: "sys:hr", kind: "hr", name: "HR Excellence", desc: "ลงเวลา · ลา · เงินเดือน", url: `/${org.slug}/go/hr`, icon: "◷" });
+    entries.push({ key: "sys:hr", kind: "hr", name: "HR Excellence", desc: "ลงเวลา · ลา · เงินเดือน", url: `/${org.slug}/go/hr`, icon: "hr" });
   }
   if (org.taskEnabled) {
     // Through the Portal so the user is signed in to Task automatically.
-    entries.push({ key: "sys:task", kind: "task", name: "TaskExcellence", desc: "งานของฉัน · อนุมัติ · Project", url: `/${org.slug}/go/task`, icon: "☑" });
+    entries.push({ key: "sys:task", kind: "task", name: "TaskExcellence", desc: "งานของฉัน · อนุมัติ · Project", url: `/${org.slug}/go/task`, icon: "task" });
   }
   for (const s of services) entries.push(serviceEntry(org.slug, s));
   for (const l of links) entries.push(linkEntry(l));
@@ -122,7 +149,7 @@ function serviceEntry(slug: string, s: Service): QuickEntry {
     name: s.name,
     desc: s.description || s.taskLabel,
     url: `/${slug}/go/service/${s.id}`,
-    icon: SERVICE_ICONS[s.icon] ?? "▦",
+    icon: s.icon,
   };
 }
 
@@ -134,7 +161,7 @@ function linkEntry(l: AppLink): QuickEntry {
     name: l.name,
     desc: personal ? "ลิงก์ส่วนตัว" : l.url,
     url: l.url,
-    icon: personal ? "☆" : "↗",
+    icon: personal ? "personal" : "company",
     linkId: l.id,
   };
 }
@@ -152,10 +179,20 @@ export function pinnedEntries(member: Member, entries: QuickEntry[]) {
   return keys.map((k) => byKey.get(k)).filter((e): e is QuickEntry => !!e);
 }
 
-export type NewsItem = Pick<News, "id" | "title" | "body" | "channel" | "requiresAck"> & { date: string; acked: boolean };
+export type NewsItem = Pick<News, "id" | "title" | "body" | "channel" | "requiresAck"> & { date: string; acked: boolean; edited: boolean; hasFiles: boolean };
 
-export function toNewsItem(n: News, acked: Set<string>): NewsItem {
-  return { id: n.id, title: n.title, body: n.body, channel: n.channel, requiresAck: n.requiresAck, date: formatThaiDate(n.publishedAt), acked: acked.has(n.id) };
+export function toNewsItem(n: News & { _count: { attachments: number } }, acked: Set<string>): NewsItem {
+  return {
+    id: n.id,
+    title: n.title,
+    body: n.body,
+    channel: n.channel,
+    requiresAck: n.requiresAck,
+    date: formatThaiDate(n.editedAt ?? n.publishedAt),
+    acked: acked.has(n.id),
+    edited: n.editedAt !== null,
+    hasFiles: n._count.attachments > 0,
+  };
 }
 
 /** DNS name where an org publishes its domain-verification TXT token. */

@@ -1,6 +1,9 @@
 import Link from "next/link";
+import { ArrowUpRight, Star } from "lucide-react";
+import { AppIcon } from "@/components/AppIcon";
 import { addLink, deleteLink, togglePin, updateLink } from "@/app/actions";
 import { ActionForm } from "@/components/ActionForm";
+import { ConfirmButton } from "@/components/ConfirmButton";
 import { orgPath, requireMember } from "@/lib/context";
 import { getQuickEntries, pinnedEntries, type QuickEntry } from "@/lib/portal";
 
@@ -20,14 +23,14 @@ export default async function LauncherPage({ params, searchParams }: { params: P
     const on = pinned.has(e.key);
     return (
       <div className="launcher-row" key={e.key} style={editing?.key === e.key ? { borderColor: "var(--brand)" } : undefined}>
-        <div className={`serviceicon ${e.kind === "task" ? "blue" : e.kind === "hr" ? "orange" : ""}`}>{e.icon}</div>
+        <div className={`serviceicon ${e.kind === "task" ? "blue" : e.kind === "hr" ? "orange" : ""}`}><AppIcon name={e.icon} /></div>
         <div className="launcher-label">
           <b>{e.name}</b>
           <small>{e.desc}</small>
         </div>
         <form action={togglePin.bind(null, slug, e.key)}>
           <button className={`pin-btn ${on ? "pinned" : ""}`} title={on ? "เอาออกจากทางลัด" : "ปักหมุดบนหน้าแรก"} aria-label={`ปักหมุด ${e.name}`}>
-            {on ? "★" : "☆"}
+            <Star size={17} strokeWidth={1.75} fill={on ? "currentColor" : "none"} aria-hidden="true" />
           </button>
         </form>
         {isAdmin && (e.kind === "hr" || e.kind === "task") && (
@@ -41,12 +44,12 @@ export default async function LauncherPage({ params, searchParams }: { params: P
               แก้ไข
             </Link>
             <form action={deleteLink.bind(null, slug, e.linkId)}>
-              <button className="btn tiny danger" title={e.kind === "company" ? "ลบลิงก์บริษัท (ทุกคนจะไม่เห็น)" : "ลบลิงก์ส่วนตัว"}>ลบ</button>
+              <ConfirmButton className="btn tiny danger" confirmLabel="ลบ" title={e.kind === "company" ? "ลบลิงก์บริษัท (ทุกคนจะไม่เห็น)" : "ลบลิงก์ส่วนตัว"} message={`ลบลิงก์ ${e.name}?${e.kind === "company" ? " พนักงานทุกคนจะไม่เห็นลิงก์นี้อีก" : ""}`}>ลบ</ConfirmButton>
             </form>
           </>
         )}
         <a className="btn tiny light" href={e.url} target="_blank" rel="noopener noreferrer">
-          เปิด ↗
+          เปิด <ArrowUpRight size={14} aria-hidden="true" />
         </a>
       </div>
     );
@@ -66,7 +69,7 @@ export default async function LauncherPage({ params, searchParams }: { params: P
       <div className="two-col">
         <section className="card panel">
           <div className="notice">
-            ปักหมุด ★ เพื่อแสดงบนหน้าแรก · ถ้าระบบปลายทางยังไม่ใช้ SSO อาจต้องเข้าสู่ระบบอีกครั้ง
+            กดดาวเพื่อปักหมุดบนหน้าแรก · ถ้าระบบปลายทางยังไม่ใช้ SSO อาจต้องเข้าสู่ระบบอีกครั้ง
           </div>
           <div className="launcher-group">ระบบที่เชื่อมต่อ</div>
           {systems.length ? systems.map(row) : <div className="quickempty">ยังไม่มี HR หรือ Task ที่เชื่อมต่อ</div>}
@@ -77,7 +80,7 @@ export default async function LauncherPage({ params, searchParams }: { params: P
           <section className="card panel">
             <h3 style={{ margin: "0 0 4px", fontSize: 16 }}>แก้ไขลิงก์</h3>
             <p className="low">{editing.kind === "company" ? "ลิงก์บริษัท · การแก้ไขมีผลกับทุกคน" : "ลิงก์ส่วนตัวของฉัน"}</p>
-            <ActionForm key={editing.key} org={slug} action={updateLink} submitLabel="บันทึกการแก้ไข" resetOnSuccess={false}>
+            <ActionForm key={editing.key} org={slug} action={updateLink} submitLabel="บันทึกการแก้ไข" resetOnSuccess={false} cancelHref={`${base}/launcher`}>
               <input type="hidden" name="id" value={editing.linkId} />
               <div className="field">
                 <label htmlFor="name">ชื่อระบบ / บริการ</label>
@@ -87,9 +90,6 @@ export default async function LauncherPage({ params, searchParams }: { params: P
                 <label htmlFor="url">ลิงก์ HTTPS</label>
                 <input id="url" name="url" type="url" required pattern="https://.*" defaultValue={editing.url} />
               </div>
-              <Link href={`${base}/launcher`} className="btn" style={{ float: "left", marginTop: 16 }}>
-                ยกเลิก
-              </Link>
             </ActionForm>
           </section>
         ) : (

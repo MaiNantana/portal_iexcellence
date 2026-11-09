@@ -63,6 +63,7 @@ model Org {
   domains      OrgDomain[]
   joinRequests JoinRequest[]
   services     Service[]
+  departments  Department[]
 
   @@map("orgs")
 }
@@ -220,12 +221,50 @@ model News {
   requiresAck Boolean  @default(false)
   authorName  String
   publishedAt DateTime @default(now())
+  /// Last time the title or body changed; existing acknowledgements are cleared at that moment.
+  editedAt    DateTime?
+  /// Hidden from the Portal from this moment on; null means it never expires.
+  expiresAt   DateTime?
+  /// Email the audience once the post is live (see lib/news-mail.ts).
+  notifyEmail Boolean   @default(false)
+  notifiedAt  DateTime?
 
-  org  Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  acks NewsAck[]
+  org         Org              @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  acks        NewsAck[]
+  attachments NewsAttachment[]
 
   @@index([orgId, publishedAt])
   @@map("news")
+}
+
+/// Kept in the database because every deploy mirrors the site folder and would delete files on disk.
+model NewsAttachment {
+  id        String   @id @default(cuid())
+  newsId    String
+  name      String
+  mime      String
+  size      Int
+  data      Bytes    @db.LongBlob
+  createdAt DateTime @default(now())
+
+  news News @relation(fields: [newsId], references: [id], onDelete: Cascade)
+
+  @@index([newsId])
+  @@map("news_attachments")
+}
+
+/// A company's own departments; `key` is what memberships, news and services store.
+model Department {
+  orgId     String
+  key       String   @db.VarChar(40)
+  name      String   @db.VarChar(60)
+  createdAt DateTime @default(now())
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@id([orgId, key])
+  @@unique([orgId, name])
+  @@map("departments")
 }
 
 model NewsAck {

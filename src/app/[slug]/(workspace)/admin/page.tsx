@@ -2,7 +2,7 @@ import Link from "next/link";
 import { listHrDatabases } from "@/app/hr-actions";
 import { HrConnectForm } from "@/components/HrConnectForm";
 import { HR_DEFAULT_ORIGIN } from "@/lib/hr";
-import { createNews, createService, deleteLink, deleteNews, deleteService, inviteMember, removeMember, revokeInvitation, setMemberRole, setSystemConnected } from "@/app/actions";
+import { createNews, createService, deleteLink, deleteNews, deleteService, inviteMember, removeMember, revokeInvitation, setMemberDepartment, setMemberRole, setSystemConnected, updateNews, createDepartment, deleteDepartment, renameDepartment } from "@/app/actions";
 import {
   addDomain,
   decideJoinRequest,
@@ -14,9 +14,13 @@ import {
   verifyDomain,
 } from "@/app/org-actions";
 import { ActionForm } from "@/components/ActionForm";
+import { AutoSubmitSelect } from "@/components/AutoSubmitSelect";
+import { ConfirmButton } from "@/components/ConfirmButton";
+import type { News } from "@prisma/client";
+import { MAX_NEWS_FILE_MB, MAX_NEWS_FILES, NEWS_FILE_ACCEPT, formatFileSize } from "@/lib/news-files";
 import { orgPath, requireAdmin } from "@/lib/context";
 import { db } from "@/lib/db";
-import { CHANNELS, DEPARTMENTS, SERVICE_ICONS, channelLabel, domainTxtName, formatThaiDate } from "@/lib/portal";
+import { CHANNELS, SERVICE_ICONS, channelLabel, domainTxtName, formatThaiDate, formatThaiDateTime, getDepartments, toBangkokInput } from "@/lib/portal";
 import { getTaskProjects } from "@/lib/task";
 
 const TABS = [
@@ -25,13 +29,14 @@ const TABS = [
   ["links", "ลิงก์บริษัท"],
   ["connections", "เชื่อมต่อโปรแกรม"],
   ["members", "สมาชิก"],
+  ["departments", "แผนก"],
   ["access", "การเข้าร่วม"],
 ] as const;
 
-export default async function AdminPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ tab?: string }> }) {
+export default async function AdminPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ tab?: string; edit?: string }> }) {
   const { slug } = await params;
   const admin = await requireAdmin(slug);
-  const { tab: rawTab } = await searchParams;
+  const { tab: rawTab, edit } = await searchParams;
   const tab = TABS.some(([k]) => k === rawTab) ? rawTab! : "news";
 
   return (
@@ -50,11 +55,12 @@ export default async function AdminPage({ params, searchParams }: { params: Prom
           </Link>
         ))}
       </nav>
-      {tab === "news" && <NewsTab slug={slug} orgId={admin.orgId} />}
+      {tab === "news" && <NewsTab slug={slug} orgId={admin.orgId} editId={edit} />}
       {tab === "services" && <ServicesTab slug={slug} admin={admin} />}
       {tab === "links" && <LinksTab slug={slug} orgId={admin.orgId} />}
       {tab === "connections" && <ConnectionsTab slug={slug} org={admin.org} />}
       {tab === "members" && <MembersTab slug={slug} orgId={admin.orgId} selfId={admin.id} />}
+      {tab === "departments" && <DepartmentsTab slug={slug} orgId={admin.orgId} editKey={edit} />}
       {tab === "access" && <AccessTab slug={slug} org={admin.org} />}
     </>
   );
@@ -73,7 +79,7 @@ async function AccessTab({ slug, org }: { slug: string; org: { id: string; name:
   return (
     <div className="two-col">
       <section className="card panel">
-        <h3 style={{ margin: 0, fontSize: 16 }}>ข้อมูลบริษัท</h3>
+        <h3>ข้อมูลบริษัท</h3>
         <p className="low">รหัสบริษัทใช้ใน URL ของ Portal เช่น /{slug} · ถ้าเปลี่ยน ลิงก์เดิมที่พนักงาน bookmark ไว้จะใช้ไม่ได้</p>
         <ActionForm org={slug} action={updateOrgProfile} submitLabel="บันทึกข้อมูลบริษัท" resetOnSuccess={false}>
           <div className="field">
@@ -86,14 +92,14 @@ async function AccessTab({ slug, org }: { slug: string; org: { id: string; name:
           </div>
         </ActionForm>
         <div style={{ height: 18 }} />
-        <h3 style={{ margin: 0, fontSize: 16 }}>ลิงก์เข้าร่วม</h3>
+        <h3>ลิงก์เข้าร่วม</h3>
         <p className="low">แชร์ในกลุ่ม LINE หรืออีเมล เหมาะกับพนักงานที่ใช้อีเมลส่วนตัว</p>
         <form action={setJoinMode.bind(null, slug)}>
           {JOIN_MODES.map(([value, label, desc]) => (
             <label key={value} className="adcard" style={{ cursor: "pointer", justifyContent: "flex-start" }}>
               <input type="radio" name="mode" value={value} defaultChecked={org.joinMode === value} />
               <div>
-                <b style={{ fontSize: 12 }}>{label}</b>
+                <b>{label}</b>
                 <small>{desc}</small>
               </div>
             </label>
@@ -109,14 +115,14 @@ async function AccessTab({ slug, org }: { slug: string; org: { id: string; name:
               <input id="joinlink" readOnly value={link} />
             </div>
             <form action={regenerateJoinCode.bind(null, slug)}>
-              <button className="btn tiny danger" title="ลิงก์เดิมจะใช้ไม่ได้ทันที">สร้างลิงก์ใหม่ (ยกเลิกลิงก์เดิม)</button>
+              <ConfirmButton className="btn tiny danger" title="ลิงก์เดิมจะใช้ไม่ได้ทันที" message="สร้างลิงก์เข้าร่วมใหม่? ลิงก์เดิมที่แชร์ไปแล้วจะใช้ไม่ได้ทันที">สร้างลิงก์ใหม่ (ยกเลิกลิงก์เดิม)</ConfirmButton>
             </form>
           </>
         )}
       </section>
 
       <section className="card panel">
-        <h3 style={{ margin: 0, fontSize: 16 }}>โดเมนอีเมลบริษัท</h3>
+        <h3>โดเมนอีเมลบริษัท</h3>
         <p className="low">ใครที่เข้าสู่ระบบด้วยอีเมลที่ยืนยันแล้วในโดเมนนี้ จะเข้าบริษัทเป็น Employee อัตโนมัติ · ใช้ gmail.com หรือโดเมนสาธารณะไม่ได้</p>
         <ActionForm org={slug} action={addDomain} submitLabel="เพิ่มโดเมน">
           <div className="field">
@@ -151,7 +157,7 @@ async function AccessTab({ slug, org }: { slug: string; org: { id: string; name:
               </>
             )}
             <form action={removeDomain.bind(null, slug, d.id)} style={{ marginTop: 6 }}>
-              <button className="inline-link" style={{ color: "var(--red)" }}>ลบโดเมน</button>
+              <ConfirmButton className="inline-link" style={{ color: "var(--red)" }} confirmLabel="ลบ" message={`ลบโดเมน @${d.domain}? คนที่ใช้อีเมลโดเมนนี้จะไม่เข้าบริษัทอัตโนมัติอีกต่อไป`}>ลบโดเมน</ConfirmButton>
             </form>
           </div>
         ))}
@@ -160,65 +166,246 @@ async function AccessTab({ slug, org }: { slug: string; org: { id: string; name:
   );
 }
 
-async function NewsTab({ slug, orgId }: { slug: string; orgId: string }) {
-  const [news, members] = await Promise.all([
-    db.news.findMany({ where: { orgId }, orderBy: { publishedAt: "desc" }, include: { _count: { select: { acks: true } } } }),
-    db.membership.findMany({ where: { orgId }, select: { department: true } }),
+type NewsWithFiles = News & { attachments: { id: string; name: string; size: number }[] };
+
+/** Shared by the create and edit forms; `news` fills in the current values when editing. */
+function NewsFields({ news, departments, slug }: { news?: NewsWithFiles; departments: Record<string, string>; slug: string }) {
+  const scheduled = !news || news.publishedAt > new Date();
+  return (
+    <>
+      <div className="field">
+        <label htmlFor="title">หัวข้อข่าว</label>
+        <input id="title" name="title" required maxLength={200} defaultValue={news?.title} placeholder="เช่น แจ้งกำหนดการประชุมประจำเดือน" />
+      </div>
+      <div className="field">
+        <label htmlFor="body">เนื้อหา</label>
+        <textarea id="body" name="body" required defaultValue={news?.body} />
+      </div>
+      <div className="field-row">
+        <div className="field">
+          <label htmlFor="channel">Channel</label>
+          <select id="channel" name="channel" defaultValue={news?.channel}>
+            {Object.entries(CHANNELS).map(([k, v]) => (
+              <option key={k} value={k}>{v}</option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="audience">กลุ่มผู้รับ</label>
+          <select id="audience" name="audience" defaultValue={news?.audience ?? "all"}>
+            <option value="all">พนักงานทั้งหมด</option>
+            {Object.entries(departments).map(([k, v]) => (
+              <option key={k} value={k}>{v} เท่านั้น</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div className="field-row">
+        {scheduled && (
+          <div className="field">
+            <label htmlFor="publishAt">ตั้งเวลาเผยแพร่ (เว้นว่าง = ทันที)</label>
+            <input id="publishAt" name="publishAt" type="datetime-local" defaultValue={news ? toBangkokInput(news.publishedAt) : ""} />
+          </div>
+        )}
+        <div className="field">
+          <label htmlFor="expiresAt">วันหมดอายุ (เว้นว่าง = ไม่หมดอายุ)</label>
+          <input id="expiresAt" name="expiresAt" type="datetime-local" defaultValue={toBangkokInput(news?.expiresAt)} />
+        </div>
+      </div>
+      <div className="field">
+        <label htmlFor="files">แนบไฟล์หรือรูปภาพ (สูงสุด {MAX_NEWS_FILES} ไฟล์ ไฟล์ละไม่เกิน {MAX_NEWS_FILE_MB} MB)</label>
+        <input id="files" name="files" type="file" multiple accept={NEWS_FILE_ACCEPT} />
+      </div>
+      {news?.attachments.map((a) => (
+        <label className="checkline" key={a.id}>
+          <input type="checkbox" name="removeFile" value={a.id} /> ลบไฟล์{" "}
+          <a className="inline-link" href={orgPath(slug, `/news-file/${a.id}`)} target="_blank" rel="noopener noreferrer">{a.name}</a>
+          <span className="muted">{formatFileSize(a.size)}</span>
+        </label>
+      ))}
+      <label className="checkline">
+        <input type="checkbox" name="requiresAck" defaultChecked={news?.requiresAck} /> ต้องกดรับทราบ
+      </label>
+      <label className="checkline">
+        <input type="checkbox" name="notifyEmail" defaultChecked /> {news && !scheduled ? "แจ้งทางอีเมลว่ามีการแก้ไข (เมื่อแก้เนื้อหาหรือไฟล์)" : "แจ้งผู้รับทางอีเมลเมื่อเผยแพร่"}
+      </label>
+    </>
+  );
+}
+
+function NewsStatus({ news, now }: { news: News; now: Date }) {
+  if (news.publishedAt > now) return <span className="chip blue">ตั้งเวลา {formatThaiDateTime(news.publishedAt)}</span>;
+  if (news.expiresAt && news.expiresAt <= now) return <span className="chip gray">หมดอายุแล้ว</span>;
+  return null;
+}
+
+function AckPeople({ people, empty }: { people: { key: string; name: string; note?: string }[]; empty: string }) {
+  if (!people.length) return <p className="low">{empty}</p>;
+  return (
+    <ul>
+      {people.map((p) => (
+        <li key={p.key}>
+          {p.name}
+          {p.note && <small> · {p.note}</small>}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+async function NewsTab({ slug, orgId, editId }: { slug: string; orgId: string; editId?: string }) {
+  const [news, members, departments] = await Promise.all([
+    db.news.findMany({
+      where: { orgId },
+      orderBy: { publishedAt: "desc" },
+      include: { acks: { select: { userId: true, ackedAt: true } }, attachments: { select: { id: true, name: true, size: true } } },
+    }),
+    db.membership.findMany({ where: { orgId }, select: { userId: true, department: true, user: { select: { name: true, email: true } } } }),
+    getDepartments(orgId),
   ]);
-  const audienceSize = (audience: string) => (audience === "all" ? members.length : members.filter((m) => m.department === audience).length);
+  const editing = news.find((n) => n.id === editId);
+  const now = new Date();
+
+  return (
+    <div className="two-col">
+      {editing ? (
+        <section className="card panel">
+          <h3>แก้ไขประกาศ</h3>
+          {editing.requiresAck && editing.publishedAt <= now && (
+            <div className="notice" style={{ marginTop: 12 }}>
+              ถ้าแก้หัวข้อ เนื้อหา หรือไฟล์แนบ การรับทราบเดิม{editing.acks.length > 0 && ` ${editing.acks.length} คน`}จะถูกล้าง และทุกคนต้องกดรับทราบอีกครั้ง
+            </div>
+          )}
+          <ActionForm key={editing.id} org={slug} action={updateNews} submitLabel="บันทึกการแก้ไข" resetOnSuccess={false} cancelHref={orgPath(slug, "/admin?tab=news")}>
+            <input type="hidden" name="id" value={editing.id} />
+            <NewsFields news={editing} departments={departments} slug={slug} />
+          </ActionForm>
+        </section>
+      ) : (
+        <section className="card panel">
+          <h3>สร้างข่าวสาร</h3>
+          <ActionForm org={slug} action={createNews} submitLabel="เผยแพร่">
+            <NewsFields departments={departments} slug={slug} />
+          </ActionForm>
+        </section>
+      )}
+      <section className="card panel">
+        <h3>ข่าวที่เผยแพร่</h3>
+        {news.length === 0 && <div className="empty" style={{ marginTop: 12 }}>ยังไม่มีข่าว</div>}
+        {news.map((n) => {
+          const audience = members.filter((m) => n.audience === "all" || m.department === n.audience);
+          const acked = new Map(n.acks.map((a) => [a.userId, a.ackedAt]));
+          const person = (m: (typeof audience)[number]) => ({ key: m.userId, name: m.user.name ?? m.user.email, note: m.department ? departments[m.department] : undefined });
+          const waiting = audience.filter((m) => !acked.has(m.userId));
+          const done = audience.filter((m) => acked.has(m.userId));
+          return (
+            <div className="adcard stack" key={n.id} style={editing?.id === n.id ? { borderColor: "var(--brand)" } : undefined}>
+              <div className="adcard-top">
+                <div style={{ minWidth: 0 }}>
+                  <b>{n.title}</b> <NewsStatus news={n} now={now} />
+                  <small>
+                    {channelLabel(n.channel)} · {formatThaiDate(n.publishedAt)} · ผู้รับ: {n.audience === "all" ? "ทั้งหมด" : departments[n.audience] ?? n.audience}
+                    {n.editedAt && ` · แก้ไข ${formatThaiDate(n.editedAt)}`}
+                    {n.expiresAt && n.expiresAt > now && ` · หมดอายุ ${formatThaiDateTime(n.expiresAt)}`}
+                    {n.attachments.length > 0 && ` · ไฟล์แนบ ${n.attachments.length}`}
+                    {n.requiresAck && ` · รับทราบ ${done.length}/${audience.length}`}
+                  </small>
+                </div>
+                <div style={{ display: "flex", gap: 6, flex: "none" }}>
+                  <Link href={orgPath(slug, `/admin?tab=news&edit=${n.id}`)} className="btn tiny">แก้ไข</Link>
+                  <form action={deleteNews.bind(null, slug, n.id)}>
+                    <ConfirmButton className="btn tiny danger" confirmLabel="ลบ" message={`ลบประกาศ "${n.title}"? ประวัติการรับทราบและไฟล์แนบจะหายไปด้วย และกู้คืนไม่ได้`}>ลบ</ConfirmButton>
+                  </form>
+                </div>
+              </div>
+              {n.requiresAck && (
+                <details className="acklist">
+                  <summary>ยังไม่รับทราบ {waiting.length} คน · ดูรายชื่อ</summary>
+                  <div className="acklist-cols">
+                    <div>
+                      <strong>ยังไม่รับทราบ ({waiting.length})</strong>
+                      <AckPeople people={waiting.map(person)} empty="รับทราบครบทุกคนแล้ว" />
+                    </div>
+                    <div>
+                      <strong>รับทราบแล้ว ({done.length})</strong>
+                      <AckPeople people={done.map((m) => ({ ...person(m), note: formatThaiDate(acked.get(m.userId)!) }))} empty="ยังไม่มีใครรับทราบ" />
+                    </div>
+                  </div>
+                </details>
+              )}
+            </div>
+          );
+        })}
+      </section>
+    </div>
+  );
+}
+
+async function DepartmentsTab({ slug, orgId, editKey }: { slug: string; orgId: string; editKey?: string }) {
+  const [departments, members, news, services] = await Promise.all([
+    db.department.findMany({ where: { orgId }, orderBy: { name: "asc" } }),
+    db.membership.groupBy({ by: ["department"], where: { orgId }, _count: true }),
+    db.news.groupBy({ by: ["audience"], where: { orgId }, _count: true }),
+    db.service.groupBy({ by: ["audience"], where: { orgId }, _count: true }),
+  ]);
+  const count = (rows: { key: string | null; n: number }[], key: string) => rows.find((r) => r.key === key)?.n ?? 0;
+  const memberRows = members.map((m) => ({ key: m.department, n: m._count }));
+  const targetRows = [...news, ...services].map((r) => ({ key: r.audience, n: r._count }));
+  const editing = departments.find((d) => d.key === editKey);
 
   return (
     <div className="two-col">
       <section className="card panel">
-        <h3 style={{ margin: 0, fontSize: 16 }}>สร้างข่าวสาร</h3>
-        <ActionForm org={slug} action={createNews} submitLabel="เผยแพร่">
-          <div className="field">
-            <label htmlFor="title">หัวข้อข่าว</label>
-            <input id="title" name="title" required maxLength={200} placeholder="เช่น แจ้งกำหนดการประชุมประจำเดือน" />
-          </div>
-          <div className="field">
-            <label htmlFor="body">เนื้อหา</label>
-            <textarea id="body" name="body" required />
-          </div>
-          <div className="field">
-            <label htmlFor="channel">Channel</label>
-            <select id="channel" name="channel">
-              {Object.entries(CHANNELS).map(([k, v]) => (
-                <option key={k} value={k}>{v}</option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="audience">กลุ่มผู้รับ</label>
-            <select id="audience" name="audience">
-              <option value="all">พนักงานทั้งหมด</option>
-              {Object.entries(DEPARTMENTS).map(([k, v]) => (
-                <option key={k} value={k}>{v} เท่านั้น</option>
-              ))}
-            </select>
-          </div>
-          <label className="checkline">
-            <input type="checkbox" name="requiresAck" /> ต้องกดรับทราบ
-          </label>
-        </ActionForm>
+        <h3>แผนกของบริษัท ({departments.length})</h3>
+        <p className="low">ใช้เลือกกลุ่มผู้รับข่าวสารและผู้ใช้บริการ · กำหนดแผนกให้สมาชิกได้ที่แท็บสมาชิก</p>
+        {departments.length === 0 && <div className="empty" style={{ marginTop: 12 }}>ยังไม่มีแผนก</div>}
+        {departments.map((d) => {
+          const people = count(memberRows, d.key);
+          const targets = targetRows.filter((r) => r.key === d.key).reduce((sum, r) => sum + r.n, 0);
+          return (
+            <div className="adcard" key={d.key} style={editing?.key === d.key ? { borderColor: "var(--brand)" } : undefined}>
+              <div style={{ minWidth: 0 }}>
+                <b>{d.name}</b>
+                <small>
+                  สมาชิก {people} คน
+                  {targets > 0 && ` · ใช้กับข่าวสารหรือบริการ ${targets} รายการ (ลบไม่ได้จนกว่าจะเปลี่ยนกลุ่มผู้รับ)`}
+                </small>
+              </div>
+              <div style={{ display: "flex", gap: 6, flex: "none" }}>
+                <Link href={orgPath(slug, `/admin?tab=departments&edit=${d.key}`)} className="btn tiny">แก้ไข</Link>
+                {targets === 0 && (
+                  <form action={deleteDepartment.bind(null, slug, d.key)}>
+                    <ConfirmButton className="btn tiny danger" confirmLabel="ลบ" message={`ลบแผนก ${d.name}?${people ? ` สมาชิก ${people} คนจะกลายเป็น "ไม่ระบุแผนก"` : ""}`}>ลบ</ConfirmButton>
+                  </form>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </section>
       <section className="card panel">
-        <h3 style={{ margin: 0, fontSize: 16 }}>ข่าวที่เผยแพร่</h3>
-        {news.length === 0 && <div className="empty" style={{ marginTop: 12 }}>ยังไม่มีข่าว</div>}
-        {news.map((n) => (
-          <div className="adcard" key={n.id}>
-            <div style={{ minWidth: 0 }}>
-              <b style={{ fontSize: 12 }}>{n.title}</b>
-              <small>
-                {channelLabel(n.channel)} · {formatThaiDate(n.publishedAt)} · ผู้รับ: {n.audience === "all" ? "ทั้งหมด" : DEPARTMENTS[n.audience] ?? n.audience}
-                {n.requiresAck && ` · รับทราบ ${n._count.acks}/${audienceSize(n.audience)}`}
-              </small>
-            </div>
-            <form action={deleteNews.bind(null, slug, n.id)}>
-              <button className="btn tiny danger">ลบ</button>
-            </form>
-          </div>
-        ))}
+        {editing ? (
+          <>
+            <h3>แก้ไขชื่อแผนก</h3>
+            <ActionForm key={editing.key} org={slug} action={renameDepartment} submitLabel="บันทึก" resetOnSuccess={false} cancelHref={orgPath(slug, "/admin?tab=departments")}>
+              <input type="hidden" name="key" value={editing.key} />
+              <div className="field">
+                <label htmlFor="dept-name">ชื่อแผนก</label>
+                <input id="dept-name" name="name" required maxLength={60} defaultValue={editing.name} />
+              </div>
+            </ActionForm>
+          </>
+        ) : (
+          <>
+            <h3>เพิ่มแผนก</h3>
+            <ActionForm org={slug} action={createDepartment} submitLabel="เพิ่มแผนก">
+              <div className="field">
+                <label htmlFor="dept-name">ชื่อแผนก</label>
+                <input id="dept-name" name="name" required maxLength={60} placeholder="เช่น ฝ่ายบัญชี" />
+              </div>
+            </ActionForm>
+          </>
+        )}
       </section>
     </div>
   );
@@ -235,9 +422,10 @@ async function ServicesTab({ slug, admin }: { slug: string; admin: Awaited<Retur
       </section>
     );
   }
-  const [services, workspaces] = await Promise.all([
+  const [services, workspaces, departments] = await Promise.all([
     db.service.findMany({ where: { orgId: admin.orgId }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
     getTaskProjects(admin),
+    getDepartments(admin.orgId),
   ]);
   return (
     <div className="two-col">
@@ -248,16 +436,16 @@ async function ServicesTab({ slug, admin }: { slug: string; admin: Awaited<Retur
         {services.map((s) => (
           <div className="adcard" key={s.id}>
             <div style={{ minWidth: 0, flex: 1 }}>
-              <b style={{ fontSize: 12 }}>
+              <b>
                 {SERVICE_ICONS[s.icon]} {s.name}
               </b>{" "}
-              <span className="chip gray">{s.audience === "all" ? "ทุกคน" : (DEPARTMENTS[s.audience] ?? s.audience)}</span>
+              <span className="chip gray">{s.audience === "all" ? "ทุกคน" : (departments[s.audience] ?? s.audience)}</span>
               <small>
                 Task: {s.taskLabel} · {s.openMode === "form" ? "เปิดฟอร์มแจ้งใหม่" : "เปิดตารางงาน"}
               </small>
             </div>
             <form action={deleteService.bind(null, slug, s.id)}>
-              <button className="btn tiny danger">ลบ</button>
+              <ConfirmButton className="btn tiny danger" confirmLabel="ลบ" message={`ลบบริการ ${s.name}? งานใน Task จะไม่ถูกลบ แต่พนักงานจะไม่เห็นบริการนี้ใน Portal`}>ลบ</ConfirmButton>
             </form>
           </div>
         ))}
@@ -318,7 +506,7 @@ async function ServicesTab({ slug, admin }: { slug: string; admin: Awaited<Retur
               <label htmlFor="svcAudience">ใครใช้ได้</label>
               <select id="svcAudience" name="audience" defaultValue="all">
                 <option value="all">ทุกคนในบริษัท</option>
-                {Object.entries(DEPARTMENTS).map(([k, label]) => (
+                {Object.entries(departments).map(([k, label]) => (
                   <option key={k} value={k}>
                     {label}
                   </option>
@@ -344,11 +532,11 @@ async function LinksTab({ slug, orgId }: { slug: string; orgId: string }) {
       {links.map((l) => (
         <div className="adcard" key={l.id}>
           <div style={{ minWidth: 0 }}>
-            <b style={{ fontSize: 12 }}>{l.name}</b>
+            <b>{l.name}</b>
             <small>{l.url}</small>
           </div>
           <form action={deleteLink.bind(null, slug, l.id)}>
-            <button className="btn tiny danger">ลบ</button>
+            <ConfirmButton className="btn tiny danger" confirmLabel="ลบ" message={`ลบลิงก์ ${l.name}? พนักงานทุกคนจะไม่เห็นลิงก์นี้อีก`}>ลบ</ConfirmButton>
           </form>
         </div>
       ))}
@@ -368,7 +556,7 @@ async function ConnectionsTab({
   const status = (on: boolean) => <span className={`chip ${on ? "" : "gray"}`}>{on ? "เชื่อมต่อแล้ว" : "ยังไม่เชื่อม"}</span>;
   const disconnect = (system: "hr" | "task") => (
     <form action={setSystemConnected.bind(null, slug, system, false)}>
-      <button className="btn tiny">ตัดการเชื่อมต่อ</button>
+      <ConfirmButton className="btn tiny" message={`ตัดการเชื่อมต่อ ${system === "hr" ? "HR Excellence" : "TaskExcellence"}? พนักงานจะเปิดระบบนี้จาก Portal ไม่ได้จนกว่าจะเชื่อมต่อใหม่`}>ตัดการเชื่อมต่อ</ConfirmButton>
     </form>
   );
   return (
@@ -402,21 +590,22 @@ async function ConnectionsTab({
 }
 
 async function MembersTab({ slug, orgId, selfId }: { slug: string; orgId: string; selfId: string }) {
-  const [members, invites, requests] = await Promise.all([
+  const [members, invites, requests, departments] = await Promise.all([
     db.membership.findMany({ where: { orgId }, include: { user: true }, orderBy: { createdAt: "asc" } }),
     db.invitation.findMany({ where: { orgId, acceptedAt: null }, orderBy: { createdAt: "desc" } }),
     db.joinRequest.findMany({ where: { orgId }, include: { user: true }, orderBy: { createdAt: "asc" } }),
+    getDepartments(orgId),
   ]);
   return (
     <div className="two-col">
       <section className="card panel">
         {requests.length > 0 && (
           <>
-            <h3 style={{ margin: 0, fontSize: 16 }}>คำขอเข้าร่วม ({requests.length})</h3>
+            <h3>คำขอเข้าร่วม ({requests.length})</h3>
             {requests.map((r) => (
               <div className="adcard" key={r.id} style={{ borderColor: "#f1ddb0", background: "#fffaf1" }}>
                 <div style={{ minWidth: 0 }}>
-                  <b style={{ fontSize: 12 }}>{r.user.name ?? r.user.email}</b>
+                  <b>{r.user.name ?? r.user.email}</b>
                   <small>{r.user.email} · ขอเมื่อ {formatThaiDate(r.createdAt)}</small>
                 </div>
                 <div style={{ display: "flex", gap: 6 }}>
@@ -424,7 +613,7 @@ async function MembersTab({ slug, orgId, selfId }: { slug: string; orgId: string
                     <button className="btn tiny primary">อนุมัติ</button>
                   </form>
                   <form action={decideJoinRequest.bind(null, slug, r.id, false)}>
-                    <button className="btn tiny danger">ปฏิเสธ</button>
+                    <ConfirmButton className="btn tiny danger" confirmLabel="ปฏิเสธ" message={`ปฏิเสธคำขอเข้าร่วมของ ${r.user.name ?? r.user.email}?`}>ปฏิเสธ</ConfirmButton>
                   </form>
                 </div>
               </div>
@@ -432,27 +621,35 @@ async function MembersTab({ slug, orgId, selfId }: { slug: string; orgId: string
             <div style={{ height: 18 }} />
           </>
         )}
-        <h3 style={{ margin: 0, fontSize: 16 }}>สมาชิก ({members.length})</h3>
+        <h3>สมาชิก ({members.length})</h3>
         <p className="low">บทบาท Admin ใน Portal ไม่ได้ให้สิทธิ์อนุมัติใน HR/Task</p>
         {members.map((m) => (
           <div className="adcard" key={m.id}>
             <div style={{ minWidth: 0 }}>
-              <b style={{ fontSize: 12 }}>
+              <b>
                 {m.user.name ?? m.user.email} {m.id === selfId && <span className="chip gray">คุณ</span>}
               </b>
               <small>
-                {m.user.email} · {m.department ? DEPARTMENTS[m.department] ?? m.department : "ไม่ระบุแผนก"}
+                {m.user.email}
                 {m.user.lastLoginAt && ` · เข้าใช้ล่าสุด ${formatThaiDate(m.user.lastLoginAt)}`}
               </small>
             </div>
             <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <form action={setMemberDepartment.bind(null, slug, m.id)}>
+                <AutoSubmitSelect name="department" className="orgswitch" aria-label={`แผนกของ ${m.user.name ?? m.user.email}`} defaultValue={m.department ?? ""}>
+                  <option value="">ไม่ระบุแผนก</option>
+                  {Object.entries(departments).map(([k, v]) => (
+                    <option key={k} value={k}>{v}</option>
+                  ))}
+                </AutoSubmitSelect>
+              </form>
               <span className={`chip ${m.role === "ADMIN" ? "warn" : "gray"}`}>{m.role === "ADMIN" ? "Admin" : "Employee"}</span>
               <form action={setMemberRole.bind(null, slug, m.id, m.role === "ADMIN" ? "EMPLOYEE" : "ADMIN")}>
                 <button className="btn tiny">{m.role === "ADMIN" ? "ลดเป็น Employee" : "ตั้งเป็น Admin"}</button>
               </form>
               {m.id !== selfId && (
                 <form action={removeMember.bind(null, slug, m.id)}>
-                  <button className="btn tiny danger">นำออก</button>
+                  <ConfirmButton className="btn tiny danger" confirmLabel="นำออก" message={`นำ ${m.user.name ?? m.user.email} ออกจากบริษัท? คำเชิญและการเชื่อมบัญชี HR/Task ของคนนี้จะถูกลบด้วย`}>นำออก</ConfirmButton>
                 </form>
               )}
             </div>
@@ -460,7 +657,7 @@ async function MembersTab({ slug, orgId, selfId }: { slug: string; orgId: string
         ))}
       </section>
       <section className="card panel">
-        <h3 style={{ margin: 0, fontSize: 16 }}>เชิญสมาชิก</h3>
+        <h3>เชิญสมาชิก</h3>
         <p className="low">ผู้รับเชิญเข้าสู่ระบบด้วย Google / Microsoft ของอีเมลนี้ หรือตั้งรหัสผ่านผ่านรหัสทางอีเมล</p>
         <ActionForm org={slug} action={inviteMember} submitLabel="ส่งคำเชิญ">
           <div className="field">
@@ -478,7 +675,7 @@ async function MembersTab({ slug, orgId, selfId }: { slug: string; orgId: string
             <label htmlFor="inv-dept">แผนก</label>
             <select id="inv-dept" name="department" defaultValue="">
               <option value="">ไม่ระบุ</option>
-              {Object.entries(DEPARTMENTS).map(([k, v]) => (
+              {Object.entries(departments).map(([k, v]) => (
                 <option key={k} value={k}>{v}</option>
               ))}
             </select>
@@ -488,13 +685,13 @@ async function MembersTab({ slug, orgId, selfId }: { slug: string; orgId: string
         {invites.map((inv) => (
           <div className="adcard" key={inv.id}>
             <div style={{ minWidth: 0 }}>
-              <b style={{ fontSize: 12 }}>{inv.email}</b>
+              <b>{inv.email}</b>
               <small>
                 {inv.role === "ADMIN" ? "Admin" : "Employee"} · เชิญโดย {inv.invitedBy} · {formatThaiDate(inv.createdAt)}
               </small>
             </div>
             <form action={revokeInvitation.bind(null, slug, inv.id)}>
-              <button className="btn tiny danger">ยกเลิก</button>
+              <ConfirmButton className="btn tiny danger" message={`ยกเลิกคำเชิญของ ${inv.email}?`}>ยกเลิก</ConfirmButton>
             </form>
           </div>
         ))}
