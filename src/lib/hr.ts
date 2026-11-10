@@ -161,3 +161,27 @@ export async function hrPayPeriods(hrBaseUrl: string, token: string, employeeId:
   if (!Array.isArray(rows)) throw new Error("HR GetPeriodListLiff: no data");
   return (rows as Record<string, string>[]).map((r) => ({ start: r.startdate, end: r.enddate }));
 }
+
+export type HrEmployee = { code: string; name: string; department: string; email: string | null };
+
+/**
+ * Active employees of one HR database, with the email on their HR profile (HR's own employee list).
+ * HR's rows carry more than this (national ID, passcode…); only these fields leave this function.
+ */
+export async function hrActiveEmployees(hrBaseUrl: string, database: HrDatabase): Promise<HrEmployee[]> {
+  const url = new URL("CfEmployee/GetEmployeeActiveList", hrApiUrl(hrBaseUrl));
+  url.search = new URLSearchParams({ dbName: database.name, dbPort: database.port }).toString();
+  const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(15000) });
+  if (!res.ok) throw new Error(`HR GetEmployeeActiveList ${database.name}: ${res.status}`);
+  const rows = await hrJson(res);
+  if (!Array.isArray(rows)) throw new Error(`HR GetEmployeeActiveList ${database.name}: ${String(rows).slice(0, 200)}`);
+  return (rows as Record<string, unknown>[]).map((r) => {
+    const email = String(r.EMAIL ?? "").trim().toLowerCase();
+    return {
+      code: String(r.EMPLOYEE_CODE ?? "").trim(),
+      name: String(r.EMPLOYEE_NAME ?? "").trim(),
+      department: String(r.DEP_NAME ?? "").trim(),
+      email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 191 ? email : null,
+    };
+  });
+}

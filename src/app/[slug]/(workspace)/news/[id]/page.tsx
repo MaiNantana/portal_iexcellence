@@ -5,7 +5,7 @@ import { acknowledgeNews } from "@/app/actions";
 import { orgPath, requireMember } from "@/lib/context";
 import { db } from "@/lib/db";
 import { formatFileSize, isInlineImage } from "@/lib/news-files";
-import { channelLabel, formatThaiDate, newsWhere } from "@/lib/portal";
+import { channelLabel, formatThaiDateTime, newsWhere } from "@/lib/portal";
 
 export default async function NewsPage({ params }: { params: Promise<{ slug: string; id: string }> }) {
   const { slug, id } = await params;
@@ -34,7 +34,7 @@ export default async function NewsPage({ params }: { params: Promise<{ slug: str
       <h1>{news.title}</h1>
       {news.editedAt && news.requiresAck && !ack && (
         <div className="notice warn" style={{ marginBottom: 14 }}>
-          ประกาศนี้มีการแก้ไขเมื่อ {formatThaiDate(news.editedAt)} กรุณาอ่านเนื้อหาล่าสุดและกดรับทราบ
+          ประกาศนี้มีการแก้ไขเมื่อ {formatThaiDateTime(news.editedAt)} กรุณาอ่านเนื้อหาล่าสุดและกดรับทราบ
         </div>
       )}
       <p className="body">{news.body}</p>
@@ -57,14 +57,14 @@ export default async function NewsPage({ params }: { params: Promise<{ slug: str
         </div>
       )}
       <div className="notice">
-        {news.authorName} · {formatThaiDate(news.publishedAt)}
-        {news.editedAt && ` · แก้ไขล่าสุด ${formatThaiDate(news.editedAt)}`}
+        {news.authorName} · {formatThaiDateTime(news.publishedAt)} น.
+        {news.editedAt && ` · แก้ไขล่าสุด ${formatThaiDateTime(news.editedAt)} น.`}
       </div>
       {news.requiresAck && (
         <div className="form-actions">
           {ack ? (
             <button className="btn primary" disabled>
-              รับทราบแล้ว ✓ · {formatThaiDate(ack.ackedAt)}
+              รับทราบแล้ว ✓ · {formatThaiDateTime(ack.ackedAt)} น.
             </button>
           ) : (
             <form action={acknowledgeNews.bind(null, slug, news.id)}>

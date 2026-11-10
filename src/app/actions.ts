@@ -339,33 +339,60 @@ const inviteSchema = z.object({
   department: z.string().trim().max(40),
 });
 
+const MAX_INVITES = 100;
+
+/** Invites every address in "emails" (one per line, or separated by commas/spaces) with the same role and department. */
 export async function inviteMember(_: FormState, form: FormData): Promise<FormState> {
   const admin = await requireAdmin(slugFrom(form));
-  const email = normalizeEmail(form.get("email"));
+  const raw = String(form.get("emails") ?? "").split(/[\s,;]+/).filter(Boolean);
   const parsed = inviteSchema.safeParse({ role: form.get("role"), department: form.get("department") ?? "" });
-  if (!email || !parsed.success) return { error: "กรุณากรอกอีเมลให้ถูกต้อง" };
-  if (parsed.data.department && !(parsed.data.department in (await getDepartments(admin.orgId)))) return { error: "ไม่พบแผนกนี้" };
-  if (await db.membership.findFirst({ where: { orgId: admin.orgId, user: { email } } })) {
-    return { error: "อีเมลนี้เป็นสมาชิกของบริษัทอยู่แล้ว" };
+  if (!raw.length || !parsed.success) return { error: "กรุณากรอกอีเมลอย่างน้อย 1 รายการ" };
+  const invalid = raw.filter((e) => !normalizeEmail(e));
+  if (invalid.length) {
+    const more = invalid.length > 5 ? ` และอีก ${invalid.length - 5} รายการ` : "";
+    return { error: `อีเมลไม่ถูกต้อง: ${invalid.slice(0, 5).join(", ")}${more}` };
   }
-  const data = { role: parsed.data.role, department: parsed.data.department || null, invitedBy: admin.user.email, acceptedAt: null };
-  await db.invitation.upsert({
-    where: { orgId_email: { orgId: admin.orgId, email } },
-    update: data,
-    create: { ...data, orgId: admin.orgId, email },
-  });
-  // A user who already has an account (e.g. in another company) joins right away.
-  const existing = await db.user.findUnique({ where: { email } });
-  if (existing?.emailVerifiedAt) await syncMemberships(existing.id, email);
+  const emails = [...new Set(raw.map((e) => normalizeEmail(e)!))];
+  if (emails.length > MAX_INVITES) return { error: `เชิญได้ครั้งละไม่เกิน ${MAX_INVITES} คน` };
+  if (parsed.data.department && !(parsed.data.department in (await getDepartments(admin.orgId)))) return { error: "ไม่พบแผนกนี้" };
 
+  const members = await db.membership.findMany({
+    where: { orgId: admin.orgId, user: { email: { in: emails } } },
+    select: { user: { select: { email: true } } },
+  });
+  const memberEmails = new Set(members.map((m) => m.user.email));
+  const toInvite = emails.filter((e) => !memberEmails.has(e));
+  if (!toInvite.length) return { error: emails.length === 1 ? "อีเมลนี้เป็นสมาชิกของบริษัทอยู่แล้ว" : "ทุกอีเมลเป็นสมาชิกของบริษัทอยู่แล้ว" };
+
+  const data = { role: parsed.data.role, department: parsed.data.department || null, invitedBy: admin.user.email, acceptedAt: null };
   const portalUrl = process.env.AUTH_URL ?? "http://localhost:3000";
-  await sendMail(
-    email,
-    `คำเชิญเข้าใช้ ${admin.org.name} Workspace`,
-    `${admin.user.name ?? admin.user.email} เชิญคุณเข้าใช้ ${admin.org.name} Workspace\n\nเข้าสู่ระบบด้วย Google / Microsoft ที่ใช้อีเมลนี้ หรือตั้งรหัสผ่านได้ที่ ${portalUrl}${orgPath(admin.org.slug, "/login/password")}`,
-  );
+  const subject = `คำเชิญเข้าใช้ ${admin.org.name} Workspace`;
+  const text = `${admin.user.name ?? admin.user.email} เชิญคุณเข้าใช้ ${admin.org.name} Workspace\n\nเข้าสู่ระบบด้วย Google / Microsoft ที่ใช้อีเมลนี้ หรือตั้งรหัสผ่านได้ที่ ${portalUrl}${orgPath(admin.org.slug, "/login/password")}`;
+  const mailFailed: string[] = [];
+  for (const email of toInvite) {
+    await db.invitation.upsert({
+      where: { orgId_email: { orgId: admin.orgId, email } },
+      update: data,
+      create: { ...data, orgId: admin.orgId, email },
+    });
+    // A user who already has an account (e.g. in another company) joins right away.
+    const existing = await db.user.findUnique({ where: { email } });
+    if (existing?.emailVerifiedAt) await syncMemberships(existing.id, email);
+    try {
+      await sendMail(email, subject, text);
+    } catch (err) {
+      mailFailed.push(email);
+      console.error(`[invite] mail to ${email} failed:`, err);
+    }
+  }
   revalidatePath("/", "layout");
-  return { ok: `ส่งคำเชิญถึง ${email} แล้ว` };
+
+  const parts = [toInvite.length === 1 ? `ส่งคำเชิญถึง ${toInvite[0]} แล้ว` : `เชิญ ${toInvite.length} คนแล้ว`];
+  if (memberEmails.size) parts.push(`ข้าม ${memberEmails.size} คนที่เป็นสมาชิกอยู่แล้ว`);
+  if (mailFailed.length) {
+    parts.push(`ส่งอีเมลแจ้งไม่สำเร็จ ${mailFailed.length} คน (${mailFailed.join(", ")}) แต่คำเชิญบันทึกแล้ว เข้าสู่ระบบด้วยอีเมลนั้นได้เลย`);
+  }
+  return { ok: parts.join(" · ") };
 }
 
 export async function revokeInvitation(slug: string, id: string) {

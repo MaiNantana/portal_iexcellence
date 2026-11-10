@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import type { FormState } from "@/app/actions";
 import { requireAdmin, requireMember, slugFrom, type Member } from "@/lib/context";
 import { db } from "@/lib/db";
-import { HR_DEFAULT_ORIGIN, hrDatabases, isHrBaseUrl, hrLogin, type HrDatabase } from "@/lib/hr";
+import { HR_DEFAULT_ORIGIN, hrActiveEmployees, hrDatabases, isHrBaseUrl, hrLogin, type HrDatabase, type HrEmployee } from "@/lib/hr";
 import { safeHttpsUrl } from "@/lib/portal";
 
 // Wrong HR passwords per Portal user: at most 5 per 15 minutes (single server, so in memory is enough).
@@ -89,6 +89,37 @@ export async function listHrDatabases(slug: string, hrBaseUrl: string): Promise<
   } catch {
     return null;
   }
+}
+
+export type HrInvitee = HrEmployee & { db: string; status: "member" | "invited" | null };
+
+/** Active HR employees (every HR database of the company) for the admin's invite picker, marked if already in the Portal. */
+export async function listHrInvitees(slug: string): Promise<{ employees: HrInvitee[] } | { error: string }> {
+  const admin = await requireAdmin(slug);
+  const { hrEnabled, hrBaseUrl } = admin.org;
+  if (!hrEnabled || !hrBaseUrl) return { error: "บริษัทยังไม่ได้เชื่อมต่อ HR" };
+  let employees: (HrEmployee & { db: string })[];
+  try {
+    const dbs = await hrDatabases(hrBaseUrl);
+    const lists = await Promise.all(dbs.map(async (d) => (await hrActiveEmployees(hrBaseUrl, d)).map((e) => ({ ...e, db: d.caption }))));
+    employees = lists.flat();
+  } catch (err) {
+    console.error("[hr-invite] HR API failed:", err);
+    return { error: "ดึงรายชื่อจาก HR ไม่ได้ ลองใหม่อีกครั้ง" };
+  }
+  const emails = [...new Set(employees.flatMap((e) => (e.email ? [e.email] : [])))];
+  const [members, invites] = await Promise.all([
+    db.membership.findMany({ where: { orgId: admin.orgId, user: { email: { in: emails } } }, select: { user: { select: { email: true } } } }),
+    db.invitation.findMany({ where: { orgId: admin.orgId, acceptedAt: null, email: { in: emails } }, select: { email: true } }),
+  ]);
+  const memberEmails = new Set(members.map((m) => m.user.email));
+  const invited = new Set(invites.map((i) => i.email));
+  return {
+    employees: employees.map((e) => ({
+      ...e,
+      status: e.email && memberEmails.has(e.email) ? "member" : e.email && invited.has(e.email) ? "invited" : null,
+    })),
+  };
 }
 
 /** Unlinks the member's HR account in one database. */

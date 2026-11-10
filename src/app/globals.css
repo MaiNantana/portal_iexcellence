@@ -274,3 +274,17 @@ dialog.confirm p{margin:0;font-size:15px;line-height:1.65;white-space:normal;fon
   .workrow .chip{max-width:100%;white-space:normal;overflow-wrap:anywhere}
 }
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}}
+
+/* invite: pick employees from HR */
+.field textarea.inv-emails{min-height:96px}
+.hrpick{border:1px solid var(--line);border-radius:12px;padding:12px;margin:-4px 0 14px;background:#fffdfb}
+.hrpick-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.hrpick-bar input{flex:1;min-width:160px;border:1px solid var(--line-strong);border-radius:9px;padding:7px 10px;font-size:14px;outline:none}
+.hrpick-bar input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(194,65,12,.14)}
+.hrpick-list{max-height:320px;overflow:auto;margin:10px 0;border-top:1px solid var(--line)}
+.hrpick-row{display:flex;gap:10px;align-items:flex-start;padding:8px 2px;border-bottom:1px solid var(--line);cursor:pointer;font-size:14px}
+.hrpick-row.off{opacity:.55;cursor:default}
+.hrpick-row input{margin-top:3px;accent-color:var(--accent);flex:none}
+.hrpick-row .who{flex:1;min-width:0}
+.hrpick-row small{display:block;color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.hrpick-foot{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap}

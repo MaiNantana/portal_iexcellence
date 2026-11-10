@@ -2,7 +2,7 @@ import Link from "next/link";
 import { listHrDatabases } from "@/app/hr-actions";
 import { HrConnectForm } from "@/components/HrConnectForm";
 import { HR_DEFAULT_ORIGIN } from "@/lib/hr";
-import { createNews, createService, deleteLink, deleteNews, deleteService, inviteMember, removeMember, revokeInvitation, setMemberDepartment, setMemberRole, setSystemConnected, updateNews, createDepartment, deleteDepartment, renameDepartment } from "@/app/actions";
+import { createNews, createService, deleteLink, deleteNews, deleteService, removeMember, revokeInvitation, setMemberDepartment, setMemberRole, setSystemConnected, updateNews, createDepartment, deleteDepartment, renameDepartment } from "@/app/actions";
 import {
   addDomain,
   decideJoinRequest,
@@ -16,6 +16,7 @@ import {
 import { ActionForm } from "@/components/ActionForm";
 import { AutoSubmitSelect } from "@/components/AutoSubmitSelect";
 import { ConfirmButton } from "@/components/ConfirmButton";
+import { InviteMembersForm } from "@/components/InviteMembersForm";
 import type { News } from "@prisma/client";
 import { MAX_NEWS_FILE_MB, MAX_NEWS_FILES, NEWS_FILE_ACCEPT, formatFileSize } from "@/lib/news-files";
 import { orgPath, requireAdmin } from "@/lib/context";
@@ -59,7 +60,7 @@ export default async function AdminPage({ params, searchParams }: { params: Prom
       {tab === "services" && <ServicesTab slug={slug} admin={admin} />}
       {tab === "links" && <LinksTab slug={slug} orgId={admin.orgId} />}
       {tab === "connections" && <ConnectionsTab slug={slug} org={admin.org} />}
-      {tab === "members" && <MembersTab slug={slug} orgId={admin.orgId} selfId={admin.id} />}
+      {tab === "members" && <MembersTab slug={slug} orgId={admin.orgId} selfId={admin.id} hrEnabled={Boolean(admin.org.hrEnabled && admin.org.hrBaseUrl)} />}
       {tab === "departments" && <DepartmentsTab slug={slug} orgId={admin.orgId} editKey={edit} />}
       {tab === "access" && <AccessTab slug={slug} org={admin.org} />}
     </>
@@ -304,8 +305,8 @@ async function NewsTab({ slug, orgId, editId }: { slug: string; orgId: string; e
                 <div style={{ minWidth: 0 }}>
                   <b>{n.title}</b> <NewsStatus news={n} now={now} />
                   <small>
-                    {channelLabel(n.channel)} · {formatThaiDate(n.publishedAt)} · ผู้รับ: {n.audience === "all" ? "ทั้งหมด" : departments[n.audience] ?? n.audience}
-                    {n.editedAt && ` · แก้ไข ${formatThaiDate(n.editedAt)}`}
+                    {channelLabel(n.channel)} · {formatThaiDateTime(n.publishedAt)} · ผู้รับ: {n.audience === "all" ? "ทั้งหมด" : departments[n.audience] ?? n.audience}
+                    {n.editedAt && ` · แก้ไข ${formatThaiDateTime(n.editedAt)}`}
                     {n.expiresAt && n.expiresAt > now && ` · หมดอายุ ${formatThaiDateTime(n.expiresAt)}`}
                     {n.attachments.length > 0 && ` · ไฟล์แนบ ${n.attachments.length}`}
                     {n.requiresAck && ` · รับทราบ ${done.length}/${audience.length}`}
@@ -328,7 +329,7 @@ async function NewsTab({ slug, orgId, editId }: { slug: string; orgId: string; e
                     </div>
                     <div>
                       <strong>รับทราบแล้ว ({done.length})</strong>
-                      <AckPeople people={done.map((m) => ({ ...person(m), note: formatThaiDate(acked.get(m.userId)!) }))} empty="ยังไม่มีใครรับทราบ" />
+                      <AckPeople people={done.map((m) => ({ ...person(m), note: formatThaiDateTime(acked.get(m.userId)!) }))} empty="ยังไม่มีใครรับทราบ" />
                     </div>
                   </div>
                 </details>
@@ -589,7 +590,7 @@ async function ConnectionsTab({
   );
 }
 
-async function MembersTab({ slug, orgId, selfId }: { slug: string; orgId: string; selfId: string }) {
+async function MembersTab({ slug, orgId, selfId, hrEnabled }: { slug: string; orgId: string; selfId: string; hrEnabled: boolean }) {
   const [members, invites, requests, departments] = await Promise.all([
     db.membership.findMany({ where: { orgId }, include: { user: true }, orderBy: { createdAt: "asc" } }),
     db.invitation.findMany({ where: { orgId, acceptedAt: null }, orderBy: { createdAt: "desc" } }),
@@ -658,29 +659,8 @@ async function MembersTab({ slug, orgId, selfId }: { slug: string; orgId: string
       </section>
       <section className="card panel">
         <h3>เชิญสมาชิก</h3>
-        <p className="low">ผู้รับเชิญเข้าสู่ระบบด้วย Google / Microsoft ของอีเมลนี้ หรือตั้งรหัสผ่านผ่านรหัสทางอีเมล</p>
-        <ActionForm org={slug} action={inviteMember} submitLabel="ส่งคำเชิญ">
-          <div className="field">
-            <label htmlFor="inv-email">อีเมล</label>
-            <input id="inv-email" name="email" type="email" required placeholder="name@company.com" />
-          </div>
-          <div className="field">
-            <label htmlFor="inv-role">บทบาท</label>
-            <select id="inv-role" name="role" defaultValue="EMPLOYEE">
-              <option value="EMPLOYEE">Employee</option>
-              <option value="ADMIN">Admin</option>
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="inv-dept">แผนก</label>
-            <select id="inv-dept" name="department" defaultValue="">
-              <option value="">ไม่ระบุ</option>
-              {Object.entries(departments).map(([k, v]) => (
-                <option key={k} value={k}>{v}</option>
-              ))}
-            </select>
-          </div>
-        </ActionForm>
+        <p className="low">เชิญได้หลายคนพร้อมกัน ผู้รับเชิญเข้าสู่ระบบด้วย Google / Microsoft ของอีเมลนั้น หรือตั้งรหัสผ่านผ่านรหัสทางอีเมล</p>
+        <InviteMembersForm slug={slug} departments={departments} hrEnabled={hrEnabled} />
         {invites.length > 0 && <div className="launcher-group">รอตอบรับ ({invites.length})</div>}
         {invites.map((inv) => (
           <div className="adcard" key={inv.id}>
