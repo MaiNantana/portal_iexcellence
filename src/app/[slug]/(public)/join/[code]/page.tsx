@@ -2,6 +2,7 @@ import Link from "next/link";
 import { joinByCode } from "@/app/org-actions";
 import { orgPath, requireUser } from "@/lib/context";
 import { db } from "@/lib/db";
+import { Logo } from "@/components/Logo";
 
 /** A company join link: /abc/join/<code>. The code must belong to the company in the URL. */
 export default async function JoinPage({ params }: { params: Promise<{ slug: string; code: string }> }) {
@@ -18,7 +19,7 @@ export default async function JoinPage({ params }: { params: Promise<{ slug: str
   return (
     <main className="login">
       <div className="card">
-        <div className="logo">i</div>
+        <Logo />
         {!org ? (
           <>
             <h2>ลิงก์นี้ใช้ไม่ได้</h2>

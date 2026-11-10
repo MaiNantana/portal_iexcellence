@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { googleEnabled, microsoftEnabled } from "@/auth";
 import { PasswordSetupForm, SignInForm } from "@/components/LoginForms";
+import { Logo } from "@/components/Logo";
 
 const ERRORS: Record<string, string> = {
   unverified: "ผู้ให้บริการไม่ได้ยืนยันอีเมลของบัญชีนี้ กรุณาใช้บัญชีอื่นหรือเข้าสู่ระบบด้วยอีเมล",
@@ -30,7 +31,7 @@ export function AuthScreen({
   return (
     <main className="login">
       <div className="card">
-        <div className="logo">i</div>
+        <Logo />
         <h2>{mode === "password" ? "สมัคร / ตั้งรหัสผ่าน" : orgName ?? "Company Workspace"}</h2>
         <p className="muted" style={{ fontSize: 13, margin: "0 0 22px" }}>
           {mode === "password"

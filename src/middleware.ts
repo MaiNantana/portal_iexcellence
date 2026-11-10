@@ -16,5 +16,5 @@ export function middleware(req: NextRequest) {
   return NextResponse.redirect(url);
 }
 
-// /api, Next assets and favicon are public.
-export const config = { matcher: ["/((?!api/|_next/|favicon\\.ico).*)"] };
+// /api, Next assets and the site icons are public.
+export const config = { matcher: ["/((?!api/|_next/|favicon\\.ico|icon\\.svg).*)"] };

@@ -4,7 +4,7 @@ import { AppIcon } from "@/components/AppIcon";
 import { Suspense } from "react";
 import { NewsPanel } from "@/components/NewsPanel";
 import { orgPath, requireMember, type Member } from "@/lib/context";
-import { CHANNELS, formatThaiDate, getQuickEntries, getVisibleNews, pinnedEntries, toNewsItem } from "@/lib/portal";
+import { CHANNELS, formatDue, formatThaiDate, formatThaiDateTime, getQuickEntries, parseApiDate, getVisibleNews, pinnedEntries, toNewsItem } from "@/lib/portal";
 import { getHrApprovals, getHrSnapshot, hrDbCaptions } from "@/lib/hr-work";
 import { getMyWork, isOverdue, taskDeepLink, workCounts, type MyWork } from "@/lib/task";
 import type { HrApproval } from "@/lib/hr";
@@ -236,8 +236,7 @@ type WorkPreviews = { overdue: WorkPreview[]; overdueNote: string; approvals: Wo
 
 /** Milliseconds of an API date string, or -Infinity when missing/unparsable (sorts last). */
 function timeOf(s: string | null) {
-  const t = s ? Date.parse(s) : NaN;
-  return Number.isNaN(t) ? -Infinity : t;
+  return parseApiDate(s)?.getTime() ?? -Infinity;
 }
 
 /** The 3 tasks that went overdue most recently (latest due date first). */
@@ -251,7 +250,7 @@ function overduePreview(slug: string, work: MyWork): WorkPreview[] {
       href: taskDeepLink(slug, t),
       title: t.title || "(ไม่มีชื่อ)",
       sub: `${t.workspaceName} › ${t.projectName}`,
-      when: t.dueDate ? `กำหนด ${formatThaiDate(new Date(t.dueDate))}` : null,
+      when: t.dueDate ? `กำหนด ${formatDue(t.dueDate)}` : null,
       late: true,
     }));
 }
@@ -277,7 +276,10 @@ function approvalsPreview(slug: string, work: MyWork | null, hr: HrApproval[] | 
   return items
     .sort((a, b) => timeOf(b.at) - timeOf(a.at))
     .slice(0, 3)
-    .map(({ at, ...p }) => ({ ...p, when: timeOf(at) > -Infinity ? `ส่งเมื่อ ${formatThaiDate(new Date(at!))}` : null }));
+    .map(({ at, ...p }) => {
+      const sent = parseApiDate(at);
+      return { ...p, when: sent ? `ส่งเมื่อ ${formatThaiDateTime(sent)} น.` : null };
+    });
 }
 
 function PreviewList({ title, items, total, href, empty }: { title: string; items: WorkPreview[]; total: number; href: string; empty: string }) {

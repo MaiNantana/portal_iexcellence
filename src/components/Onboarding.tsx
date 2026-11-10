@@ -4,6 +4,7 @@ import { createOrg, goToJoinCode } from "@/app/org-actions";
 import { ActionForm } from "@/components/ActionForm";
 import { db } from "@/lib/db";
 import type { User } from "@prisma/client";
+import { Logo } from "@/components/Logo";
 
 /** Shown at "/" to signed-in people without a company yet, or with ?start=1 to create / join another one. */
 export async function Onboarding({ user, hasCompany }: { user: User; hasCompany: boolean }) {
@@ -12,7 +13,7 @@ export async function Onboarding({ user, hasCompany }: { user: User; hasCompany:
   return (
     <main className="login">
       <div className="card" style={{ maxWidth: 520, textAlign: "left" }}>
-        <div className="logo" style={{ margin: 0 }}>i</div>
+        <Logo className="logo logo-inline" />
         <h2>ยินดีต้อนรับ</h2>
         <p className="muted" style={{ fontSize: 13, margin: "0 0 6px" }}>
           เข้าสู่ระบบเป็น <b>{user.email}</b>

@@ -5,6 +5,7 @@ import { MobileDock, TopNav } from "@/components/NavLinks";
 import { orgPath, requireMember } from "@/lib/context";
 import { db } from "@/lib/db";
 import { getVisibleNews } from "@/lib/portal";
+import { Logo } from "@/components/Logo";
 
 export default async function TenantLayout({ children, params }: { children: React.ReactNode; params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -21,7 +22,7 @@ export default async function TenantLayout({ children, params }: { children: Rea
       <header className="top">
         <div className="top-inner">
           <Link href={base} className="brand">
-            <div className="logo">i</div>
+            <Logo />
             <div>
               <h1>{member.org.name}</h1>
               <div className="subbrand">COMPANY WORKSPACE</div>

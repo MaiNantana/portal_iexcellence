@@ -39,6 +39,24 @@ export function formatThaiDateTime(d: Date) {
   return new Intl.DateTimeFormat("th-TH", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" }).format(d);
 }
 
+/**
+ * A date string from Task or HR. HR's MySQL DATETIME arrives without a zone and is Thai time, so a date-time
+ * without one is read as +07:00 (the server itself may run in UTC). Null when missing or unparsable.
+ */
+export function parseApiDate(s: string | null | undefined) {
+  if (!s) return null;
+  const d = new Date(/T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(s) ? `${s}+07:00` : s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** A due date with its time, or the date alone when it has no time of day (a bare date, or midnight Thai time). */
+export function formatDue(s: string) {
+  const d = parseApiDate(s);
+  if (!d) return s;
+  const time = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "Asia/Bangkok" }).format(d);
+  return /T\d{2}:\d{2}/.test(s) && time !== "00:00" ? `${formatThaiDateTime(d)} น.` : formatThaiDate(d);
+}
+
 export function formatThaiDate(d: Date) {
   return new Intl.DateTimeFormat("th-TH", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Bangkok" }).format(d);
 }
