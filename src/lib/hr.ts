@@ -170,7 +170,8 @@ export type HrEmployee = { code: string; name: string; department: string; email
  */
 export async function hrActiveEmployees(hrBaseUrl: string, database: HrDatabase): Promise<HrEmployee[]> {
   const url = new URL("CfEmployee/GetEmployeeActiveList", hrApiUrl(hrBaseUrl));
-  url.search = new URLSearchParams({ dbName: database.name, dbPort: database.port }).toString();
+  // group and empId are optional filters, but HR's Web API only matches the action when both are in the query.
+  url.search = new URLSearchParams({ dbName: database.name, dbPort: database.port, group: "", empId: "" }).toString();
   const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(15000) });
   if (!res.ok) throw new Error(`HR GetEmployeeActiveList ${database.name}: ${res.status}`);
   const rows = await hrJson(res);
