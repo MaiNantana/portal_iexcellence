@@ -6,7 +6,8 @@ import { NewsPanel } from "@/components/NewsPanel";
 import { orgPath, requireMember, type Member } from "@/lib/context";
 import { CHANNELS, formatThaiDate, getQuickEntries, getVisibleNews, pinnedEntries, toNewsItem } from "@/lib/portal";
 import { getHrApprovals, getHrSnapshot, hrDbCaptions } from "@/lib/hr-work";
-import { getMyWork, workCounts } from "@/lib/task";
+import { getMyWork, isOverdue, taskDeepLink, workCounts, type MyWork } from "@/lib/task";
+import type { HrApproval } from "@/lib/hr";
 
 function todayThai() {
   return new Intl.DateTimeFormat("th-TH", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Bangkok" }).format(new Date());
@@ -230,8 +231,96 @@ async function HrPanel({ member, base }: { member: Member; base: string }) {
   );
 }
 
-/** "สิ่งที่ต้องดำเนินการ": counts from Task; each opens My Work on that list. Without counts it's the loading state. */
-function WorkDashboard({ base, counts, failed }: { base: string; counts?: { open: number; overdue: number; approvals: number }; failed?: boolean }) {
+type WorkPreview = { key: string; href: string; title: string; sub: string; when: string | null; late?: boolean };
+type WorkPreviews = { overdue: WorkPreview[]; overdueNote: string; approvals: WorkPreview[] };
+
+/** Milliseconds of an API date string, or -Infinity when missing/unparsable (sorts last). */
+function timeOf(s: string | null) {
+  const t = s ? Date.parse(s) : NaN;
+  return Number.isNaN(t) ? -Infinity : t;
+}
+
+/** The 3 tasks that went overdue most recently (latest due date first). */
+function overduePreview(slug: string, work: MyWork): WorkPreview[] {
+  return work.tasks
+    .filter((t) => isOverdue(t))
+    .sort((a, b) => timeOf(b.dueDate) - timeOf(a.dueDate))
+    .slice(0, 3)
+    .map((t) => ({
+      key: t.taskId,
+      href: taskDeepLink(slug, t),
+      title: t.title || "(ไม่มีชื่อ)",
+      sub: `${t.workspaceName} › ${t.projectName}`,
+      when: t.dueDate ? `กำหนด ${formatThaiDate(new Date(t.dueDate))}` : null,
+      late: true,
+    }));
+}
+
+/** The 3 newest approval requests, HR leave/OT and Task workflow together (newest submission first). */
+function approvalsPreview(slug: string, work: MyWork | null, hr: HrApproval[] | null): WorkPreview[] {
+  const items = [
+    ...(hr ?? []).map((a) => ({
+      at: a.requestedAt,
+      key: `hr:${a.db}:${a.type}:${a.requestId}`,
+      href: `${orgPath(slug, "/go/hr")}?${new URLSearchParams({ to: a.type === "AS" ? "approve-leave" : "approve-ot", db: a.db })}`,
+      title: `${a.type === "AS" ? "ลางาน" : "OT"} · ${a.employeeName || "-"}`,
+      sub: `HR · ${a.kind}`,
+    })),
+    ...(work?.approvals ?? []).map((a) => ({
+      at: a.submittedAt,
+      key: `task:${a.taskId}:${a.stepName}`,
+      href: taskDeepLink(slug, a),
+      title: a.title || "(ไม่มีชื่อ)",
+      sub: `Task · ขั้นตอน: ${a.stepName}`,
+    })),
+  ];
+  return items
+    .sort((a, b) => timeOf(b.at) - timeOf(a.at))
+    .slice(0, 3)
+    .map(({ at, ...p }) => ({ ...p, when: timeOf(at) > -Infinity ? `ส่งเมื่อ ${formatThaiDate(new Date(at!))}` : null }));
+}
+
+function PreviewList({ title, items, total, href, empty }: { title: string; items: WorkPreview[]; total: number; href: string; empty: string }) {
+  return (
+    <div className="wpreview">
+      <div className="wpreview-head">
+        <b>{title}</b>
+        <Link href={href} className="inline-link">
+          ดูเพิ่มเติม{total > items.length ? ` (${total})` : ""} <ChevronRight size={14} aria-hidden="true" />
+        </Link>
+      </div>
+      {items.length === 0 ? (
+        <p className="quiet">{empty}</p>
+      ) : (
+        items.map((i) => (
+          <a key={i.key} className="wprow" href={i.href} target="_blank" rel="noopener noreferrer">
+            <span className="wtitle">
+              <b>{i.title}</b>
+              <small>{i.sub}</small>
+            </span>
+            {i.when && <span className={`wdue${i.late ? " late" : ""}`}>{i.when}</span>}
+          </a>
+        ))
+      )}
+    </div>
+  );
+}
+
+/**
+ * "สิ่งที่ต้องดำเนินการ": counts from Task/HR; each opens My Work on that list, and the latest 3 overdue tasks and
+ * approval requests are listed under them. Without counts it's the loading state.
+ */
+function WorkDashboard({
+  base,
+  counts,
+  previews,
+  failed,
+}: {
+  base: string;
+  counts?: { open: number; overdue: number; approvals: number };
+  previews?: WorkPreviews;
+  failed?: boolean;
+}) {
   const items = [
     { tab: "tasks", label: "งานของฉัน", n: counts?.open, warn: false },
     { tab: "overdue", label: "งานเกินกำหนด", n: counts?.overdue, warn: true },
@@ -259,6 +348,12 @@ function WorkDashboard({ base, counts, failed }: { base: string; counts?: { open
           </Link>
         ))}
       </div>
+      {previews && counts && (
+        <div className="workpreviews">
+          <PreviewList title="งานเกินกำหนดล่าสุด" items={previews.overdue} total={counts.overdue} href={`${base}/my-work?tab=overdue`} empty={previews.overdueNote} />
+          <PreviewList title="รออนุมัติล่าสุด" items={previews.approvals} total={counts.approvals} href={`${base}/my-work?tab=approvals`} empty="ไม่มีงานรออนุมัติ" />
+        </div>
+      )}
     </section>
   );
 }
@@ -268,5 +363,11 @@ async function MyWorkDashboard({ member, base }: { member: Member; base: string 
   if (!work && !hr) return member.org.taskEnabled ? <WorkDashboard base={base} failed /> : null;
   const counts = workCounts(work ?? { tasks: [], approvals: [] });
   counts.approvals += hr?.length ?? 0;
-  return <WorkDashboard base={base} counts={counts} />;
+  const slug = member.org.slug;
+  const previews: WorkPreviews = {
+    overdue: work ? overduePreview(slug, work) : [],
+    overdueNote: work ? "ไม่มีงานเกินกำหนด" : "ติดต่อ TaskExcellence ไม่ได้",
+    approvals: approvalsPreview(slug, work, hr),
+  };
+  return <WorkDashboard base={base} counts={counts} previews={previews} />;
 }
