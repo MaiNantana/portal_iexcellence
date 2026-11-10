@@ -630,10 +630,8 @@ async function MembersTab({ slug, orgId, selfId, hrEnabled }: { slug: string; or
               <b>
                 {m.user.name ?? m.user.email} {m.id === selfId && <span className="chip gray">คุณ</span>}
               </b>
-              <small>
-                {m.user.email}
-                {m.user.lastLoginAt && ` · เข้าใช้ล่าสุด ${formatThaiDate(m.user.lastLoginAt)}`}
-              </small>
+              <small>{m.user.email}</small>
+              <small>{m.user.lastLoginAt ? `เข้าใช้ล่าสุด ${formatThaiDateTime(m.user.lastLoginAt)} น.` : "ยังไม่เคยเข้าใช้"}</small>
             </div>
             <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
               <form action={setMemberDepartment.bind(null, slug, m.id)}>
