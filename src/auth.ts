@@ -6,6 +6,7 @@ import Google from "next-auth/providers/google";
 import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
 import { db } from "@/lib/db";
 import { checkPassword, normalizeEmail, resolveOAuthUser } from "@/lib/identity";
+import { isSuperadmin } from "@/lib/superadmin";
 
 class PasswordSignInError extends CredentialsSignin {
   constructor(code: string) {
@@ -47,7 +48,7 @@ function verifiedEmail(provider: string, profile: Profile | undefined) {
   return trusted ? normalizeEmail(p.email) : null;
 }
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
   providers,
   session: { strategy: "jwt", maxAge: 8 * 60 * 60 },
   pages: { signIn: "/", error: "/" },
@@ -59,7 +60,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       await resolveOAuthUser({ provider: account.provider, subject: account.providerAccountId, email, name: profile?.name });
       return true;
     },
-    async jwt({ token, user, account }) {
+    async jwt({ token, user, account, trigger, session }) {
+      // Superadmin "act as" (สวมรอย): only set through startActingAs / stopActingAs, and re-checked
+      // here against the real signed-in user, so the client can never grant it to itself.
+      if (trigger === "update") {
+        const actAs = (session as { actAs?: unknown } | undefined)?.actAs;
+        if (actAs === null) delete token.actAs;
+        else if (typeof actAs === "string" && typeof token.uid === "string") {
+          const real = await db.user.findUnique({ where: { id: token.uid }, select: { email: true } });
+          const target = await db.user.findUnique({ where: { id: actAs }, select: { id: true } });
+          if (real && isSuperadmin(real.email) && target && target.id !== token.uid) token.actAs = target.id;
+        }
+        return token;
+      }
       if (account?.type === "credentials") {
         token.uid = user.id;
       } else if (account) {
@@ -71,7 +84,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return token;
     },
     async session({ session, token }) {
-      session.user.id = token.uid as string;
+      // While acting as someone, every page and action sees that user; realUserId keeps who is behind it.
+      if (typeof token.actAs === "string") {
+        session.user.id = token.actAs;
+        session.realUserId = token.uid as string;
+      } else {
+        session.user.id = token.uid as string;
+      }
       return session;
     },
   },

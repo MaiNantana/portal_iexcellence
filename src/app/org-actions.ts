@@ -14,7 +14,7 @@ const MAX_ORGS_CREATED_PER_DAY = 3;
 const newCode = () => randomBytes(9).toString("base64url");
 // Every app page lives under the company code (/abc/login, /abc/admin, …), so the root only holds
 // "/" and Auth.js's /api; reserve that plus a few infrastructure names.
-const RESERVED_SLUGS = new Set(["api", "assets", "static", "www"]);
+const RESERVED_SLUGS = new Set(["api", "assets", "static", "www", "superadmin"]);
 
 /** Company code used in URLs (/<slug>): 3–30 of a-z, 0-9 and inner hyphens / underscores. */
 async function slugError(slug: string, exceptOrgId?: string) {

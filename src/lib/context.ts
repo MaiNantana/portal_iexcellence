@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { syncMemberships } from "@/lib/identity";
+import { isSuperadmin } from "@/lib/superadmin";
 
 /** Only same-site paths are allowed as post-login destinations. */
 export function safeNext(raw: unknown) {
@@ -35,6 +36,19 @@ export async function currentUser() {
   return session?.user?.id ? db.user.findUnique({ where: { id: session.user.id } }) : null;
 }
 
+/**
+ * The person really signed in: the superadmin while they act as someone (สวมรอย), else the user.
+ * `acting` is the user being acted as, or null.
+ */
+export const realUser = cache(async () => {
+  const session = await auth();
+  if (!session?.user?.id) return null;
+  const real = await db.user.findUnique({ where: { id: session.realUserId ?? session.user.id } });
+  if (!real) return null;
+  const acting = session.realUserId ? await db.user.findUnique({ where: { id: session.user.id } }) : null;
+  return { user: real, acting, superadmin: isSuperadmin(real.email) };
+});
+
 /** The signed-in user, whether or not they belong to any org yet. */
 export const requireUser = cache(async (next = "/") => {
   const user = await currentUser();
@@ -66,7 +80,8 @@ export const requireMember = cache(async (slug: string) => {
     include: { org: true, user: true },
   });
   if (!member) notFound();
-  if (user.lastOrgId !== member.orgId) {
+  // Acting as someone must not move their own "last used company".
+  if (user.lastOrgId !== member.orgId && !(await auth())?.realUserId) {
     await db.user.update({ where: { id: user.id }, data: { lastOrgId: member.orgId } });
   }
   return member;

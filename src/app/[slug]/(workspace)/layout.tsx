@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { ArrowLeftRight, Bell, LogOut, Settings } from "lucide-react";
+import { ArrowLeftRight, Bell, LogOut, Settings, ShieldAlert, ShieldCheck } from "lucide-react";
 import { logout, switchOrg } from "@/app/actions";
+import { stopActingAs } from "@/app/superadmin-actions";
 import { MobileDock, TopNav } from "@/components/NavLinks";
-import { orgPath, requireMember } from "@/lib/context";
+import { orgPath, realUser, requireMember } from "@/lib/context";
 import { db } from "@/lib/db";
 import { getVisibleNews } from "@/lib/portal";
 import { Logo } from "@/components/Logo";
@@ -10,15 +11,27 @@ import { Logo } from "@/components/Logo";
 export default async function TenantLayout({ children, params }: { children: React.ReactNode; params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const member = await requireMember(slug);
-  const [{ pending }, orgs] = await Promise.all([
+  const [{ pending }, orgs, me] = await Promise.all([
     getVisibleNews(member),
     db.membership.findMany({ where: { userId: member.userId }, select: { org: { select: { id: true, name: true } } }, orderBy: { createdAt: "asc" } }),
+    realUser(),
   ]);
   const isAdmin = member.role === "ADMIN";
   const base = orgPath(slug);
 
   return (
     <>
+      {me?.acting && (
+        <div className="actingbar" role="status">
+          <ShieldAlert size={16} strokeWidth={2} aria-hidden="true" />
+          <span>
+            กำลังสวมรอยเป็น <b>{me.acting.email}</b> (คุณคือ {me.user.email})
+          </span>
+          <form action={stopActingAs}>
+            <button className="btn tiny">กลับเป็นตัวเอง</button>
+          </form>
+        </div>
+      )}
       <header className="top">
         <div className="top-inner">
           <Link href={base} className="brand">
@@ -42,6 +55,11 @@ export default async function TenantLayout({ children, params }: { children: Rea
               <Link href={`${base}/admin`} className="iconbtn adminbtn" title="จัดการบริษัท: สมาชิก เชิญคน การเชื่อมต่อ">
                 <Settings size={17} strokeWidth={1.75} aria-hidden="true" />
                 <span>จัดการบริษัท</span>
+              </Link>
+            )}
+            {me?.superadmin && (
+              <Link href="/superadmin" className="iconbtn" title="Superadmin: ทุกบริษัทบน Portal" aria-label="Superadmin">
+                <ShieldCheck size={17} strokeWidth={1.75} aria-hidden="true" />
               </Link>
             )}
             {orgs.length > 1 && (

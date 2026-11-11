@@ -43,6 +43,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   });
   if (!member) return new Response("Not found", { status: 404 });
   const { org } = member;
+  if (session.realUserId) console.warn(`[superadmin] user ${session.realUserId} opens ${system} as ${member.user.email} in /${slug}`);
   if (system === "hr") return goToHr(member, here.searchParams.get("to"), here.searchParams.get("db"));
   if (!org.taskEnabled) return seeOther(orgPath(slug));
 

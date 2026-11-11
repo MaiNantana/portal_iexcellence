@@ -11,7 +11,8 @@ export function middleware(req: NextRequest) {
   // "/" renders its own sign-in; a company's login pages must stay reachable.
   if (!slug || section === "login" || SESSION_COOKIES.some((name) => req.cookies.has(name))) return NextResponse.next();
   const url = req.nextUrl.clone();
-  url.pathname = `/${slug}/login`;
+  // /superadmin is not a company: sign in on the root page.
+  url.pathname = slug === "superadmin" ? "/" : `/${slug}/login`;
   url.search = `?next=${encodeURIComponent(pathname + search)}`;
   return NextResponse.redirect(url);
 }
