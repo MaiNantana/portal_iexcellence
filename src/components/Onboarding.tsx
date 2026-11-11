@@ -44,7 +44,7 @@ export async function Onboarding({ user, hasCompany }: { user: User; hasCompany:
           </div>
           <div className="field">
             <label htmlFor="new-slug">รหัสบริษัท (ใช้ใน URL เช่น /abc)</label>
-            <input id="new-slug" name="slug" required pattern="[a-z0-9][a-z0-9_\-]{1,28}[a-z0-9]" placeholder="abc" title="a-z, 0-9, - และ _ ได้ 3–30 ตัว" />
+            <input id="new-slug" name="slug" required autoCapitalize="none" autoComplete="off" spellCheck={false} placeholder="abc" title="a-z, 0-9, - และ _ ได้ 3–30 ตัว" />
           </div>
         </ActionForm>
 
