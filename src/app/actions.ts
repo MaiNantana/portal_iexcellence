@@ -9,6 +9,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { signOut } from "@/auth";
 import { db } from "@/lib/db";
+import { deactivateHubUser, hubConfigured } from "@/lib/hub";
 import { orgPath, requireAdmin, requireMember, requireUser, slugFrom } from "@/lib/context";
 import { normalizeEmail, syncMemberships } from "@/lib/identity";
 import { sendMail } from "@/lib/mail";
@@ -412,6 +413,10 @@ export async function removeMember(slug: string, membershipId: string) {
     db.invitation.deleteMany({ where: { orgId: admin.orgId, email: target.user.email } }),
     db.accountLink.deleteMany({ where: { orgId: admin.orgId, userId: target.userId } }),
   ]);
+  // Stop LINE / Telegram notifications for this company (the Hub keeps them per company).
+  if (hubConfigured()) {
+    await deactivateHubUser(admin.org.slug, target.userId).catch((err) => console.error("[notify] Hub deactivate failed:", err));
+  }
   revalidatePath("/", "layout");
 }
 

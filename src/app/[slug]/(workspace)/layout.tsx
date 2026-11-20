@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeftRight, Bell, LogOut, Settings, ShieldAlert, ShieldCheck } from "lucide-react";
+import { ArrowLeftRight, Bell, BellRing, LogOut, Settings, ShieldAlert, ShieldCheck } from "lucide-react";
 import { logout, switchOrg } from "@/app/actions";
 import { stopActingAs } from "@/app/superadmin-actions";
 import { MobileDock, TopNav } from "@/components/NavLinks";
@@ -50,6 +50,9 @@ export default async function TenantLayout({ children, params }: { children: Rea
             >
               <Bell size={18} strokeWidth={1.75} aria-hidden="true" />
               {pending.length > 0 && <span className="dot" />}
+            </Link>
+            <Link href={`${base}/notifications`} className="iconbtn" title="ช่องทางรับแจ้งเตือน: LINE · Telegram · Discord" aria-label="ช่องทางรับแจ้งเตือน">
+              <BellRing size={17} strokeWidth={1.75} aria-hidden="true" />
             </Link>
             {isAdmin && (
               <Link href={`${base}/admin`} className="iconbtn adminbtn" title="จัดการบริษัท: สมาชิก เชิญคน การเชื่อมต่อ">

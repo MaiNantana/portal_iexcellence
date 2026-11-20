@@ -120,6 +120,7 @@ model User {
   acks         NewsAck[]
   links        AppLink[]
   accountLinks AccountLink[]
+  discord      DiscordLink?
 
   @@map("users")
 }
@@ -319,4 +320,31 @@ model Service {
 
   @@index([orgId])
   @@map("services")
+}
+
+/// The member's Discord account, for notification DMs from the Portal's bot (LINE / Telegram links live in the Notification Hub).
+model DiscordLink {
+  userId        String   @id
+  discordUserId String
+  username      String?
+  /// DM channel between the bot and the user, opened on first send.
+  dmChannelId   String?
+  linkedAt      DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([discordUserId])
+  @@map("discord_links")
+}
+
+/// Discord messages already sent per Idempotency-Key, so a retried /api/notify call does not DM twice
+/// (the Hub keeps its own record for LINE / Telegram).
+model NotifyDelivery {
+  key       String
+  userId    String
+  createdAt DateTime @default(now())
+
+  @@id([key, userId])
+  @@index([createdAt])
+  @@map("notify_deliveries")
 }
