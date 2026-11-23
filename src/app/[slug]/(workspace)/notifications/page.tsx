@@ -22,6 +22,7 @@ const TEXT = defineText({
     } as Record<string, { ok: boolean; text: string }>,
     back: "‹ กลับหน้าแรก",
     title: "ช่องทางรับแจ้งเตือน",
+    guide: "คู่มือตั้งค่าทีละขั้นตอน ›",
     lead: (email: string) => `แจ้งเตือนจาก HR และ Task (เช่น งานรออนุมัติ งานใกล้ครบกำหนด) ยังส่งทางอีเมล ${email} เหมือนเดิม และส่งทางช่องทางที่เชื่อมไว้ด้านล่างด้วย`,
     notAvailable: "ยังไม่เปิดให้ใช้งาน",
     unreachable: "ติดต่อระบบแจ้งเตือนไม่ได้ ลองใหม่อีกครั้ง",
@@ -47,6 +48,7 @@ const TEXT = defineText({
     },
     back: "‹ Back to home",
     title: "Notification channels",
+    guide: "Step-by-step setup guide ›",
     lead: (email: string) => `HR and Task notifications (such as approvals and tasks coming due) still go to ${email}, and also to the channels you connect below.`,
     notAvailable: "Not available yet",
     unreachable: "Can't reach the notification service. Please try again.",
@@ -100,6 +102,11 @@ export default async function NotificationsPage({
       </Link>
       <h1>{t.title}</h1>
       <p className="body">{t.lead(member.user.email)}</p>
+      <p style={{ margin: "-8px 0 16px" }}>
+        <Link href={withLocale(locale, orgPath(slug, "/notifications/guide"))} className="inline-link">
+          {t.guide}
+        </Link>
+      </p>
       {banner && <div className={`notice ${banner.ok ? "ok" : "error"}`}>{banner.text}</div>}
 
       <h2 style={{ marginTop: 20 }}>LINE / Telegram</h2>
