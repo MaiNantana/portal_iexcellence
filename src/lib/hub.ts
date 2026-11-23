@@ -67,6 +67,29 @@ export async function createLinkKey(org: { slug: string; name: string }, user: {
 }
 
 /**
+ * LINE opens links in its own in-app browser, which has none of the user's sign-ins (Task then shows
+ * its login, and Google sign-in is blocked there). `openExternalBrowser=1` is LINE's switch to open
+ * the link in the phone's normal browser instead; Telegram ignores it. Only our own hosts get it, so
+ * outside links (signed file URLs etc.) are left exactly as they are.
+ */
+const OWN_HOST = /(^|\.)iexcellence\.(cloud|net)$/i;
+export function openLinksInExternalBrowser(text: string) {
+  return text.replace(/https?:\/\/[^\s<>"']+/g, (raw) => {
+    const trail = raw.match(/[).,!?;:]+$/)?.[0] ?? ""; // sentence punctuation after the link
+    const link = trail ? raw.slice(0, -trail.length) : raw;
+    let url: URL;
+    try {
+      url = new URL(link);
+    } catch {
+      return raw;
+    }
+    if (!OWN_HOST.test(url.hostname) || url.searchParams.has("openExternalBrowser")) return raw;
+    url.searchParams.set("openExternalBrowser", "1");
+    return url.toString() + trail;
+  });
+}
+
+/**
  * API #2: send a text to Portal users (1–1000 per call; larger lists are split here).
  * The Hub picks each person's channel. Retries must reuse the same idempotencyKey.
  */
@@ -82,7 +105,7 @@ export async function sendHubEvent(org: { slug: string; name: string }, userIds:
         companyName: org.name.slice(0, 100),
         event: "common.announcement",
         to: { users: chunk },
-        data: { text: text.slice(0, 4900) },
+        data: { text: openLinksInExternalBrowser(text).slice(0, 4900) },
         ...(ref ? { ref: ref.slice(0, 128) } : {}),
       },
       // Telegram sends ~25 messages/second, so a large list can take a while.
