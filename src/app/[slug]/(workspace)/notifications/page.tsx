@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { choosePrimary, unlinkChannel } from "@/app/notify-actions";
+import { choosePrimary, unlinkChannel, unlinkGroup } from "@/app/notify-actions";
 import { ConfirmButton } from "@/components/ConfirmButton";
-import { ConnectChannelButton, TestNotificationButton } from "@/components/NotifyConnect";
+import { ConnectChannelButton, ConnectGroupButton, GroupTestButton, TestNotificationButton } from "@/components/NotifyConnect";
 import { orgPath, requireMember } from "@/lib/context";
 import { db } from "@/lib/db";
 import { discordConfigured } from "@/lib/discord";
-import { HUB_CHANNELS, hubConfigured, hubUserChannels, type HubUserChannels } from "@/lib/hub";
+import { HUB_CHANNELS, hubConfigured, hubGroups, hubGroupsEnabled, hubUserChannels, type HubGroup, type HubUserChannels } from "@/lib/hub";
 import { defineText, withLocale } from "@/i18n";
 import { getLocale } from "@/i18n/server";
 
@@ -37,6 +37,16 @@ const TEXT = defineText({
     discordLinked: (who: string) => `เชื่อมแล้ว · ${who} · รับเป็นข้อความส่วนตัว (DM)`,
     discordNotLinked: "ยังไม่เชื่อม · จะเข้าร่วมเซิร์ฟเวอร์ Discord ของ iExcellence เพื่อรับ DM",
     connectDiscord: "เชื่อม Discord",
+    groups: "กลุ่มแจ้งเตือน",
+    groupsLead: "ให้แจ้งเตือนจาก Task ส่งเข้ากลุ่ม LINE / Telegram ของทีม เห็นเฉพาะ admin ของบริษัท",
+    soon: "เร็ว ๆ นี้",
+    groupsSoon: "กำลังพัฒนาร่วมกับผู้ให้บริการระบบแจ้งเตือน ดูขั้นตอนล่วงหน้าได้ในคู่มือ",
+    groupsGuide: "ขั้นตอนเชื่อมกลุ่ม ›",
+    noGroups: "ยังไม่มีกลุ่มที่เชื่อมไว้",
+    groupMeta: (channel: string, count?: number) => `${channel}${count ? ` · สมาชิก ${count} คน` : ""}`,
+    groupLeft: "บอทออกจากกลุ่มแล้ว · เชิญกลับแล้ว /link ใหม่",
+    unlinkGroupConfirm: (name: string) => `เลิกส่งแจ้งเตือนเข้ากลุ่ม "${name}" และให้บอทออกจากกลุ่ม?`,
+    quota: "LINE นับโควตาข้อความตามจำนวนสมาชิกในกลุ่ม ส่ง 1 ครั้งเข้ากลุ่ม 20 คน = 20 ข้อความ",
   },
   en: {
     discord: {
@@ -63,6 +73,16 @@ const TEXT = defineText({
     discordLinked: (who: string) => `Connected · ${who} · sent as direct messages (DM)`,
     discordNotLinked: "Not connected · you'll join the iExcellence Discord server to receive DMs",
     connectDiscord: "Connect Discord",
+    groups: "Notification groups",
+    groupsLead: "Send Task notifications into your team's LINE / Telegram groups. Only company admins see this.",
+    soon: "Coming soon",
+    groupsSoon: "Being built with the notification provider. The setup steps are already in the guide.",
+    groupsGuide: "How to connect a group ›",
+    noGroups: "No groups connected yet",
+    groupMeta: (channel: string, count?: number) => `${channel}${count ? ` · ${count} members` : ""}`,
+    groupLeft: "The bot left the group · invite it back and /link again",
+    unlinkGroupConfirm: (name: string) => `Stop notifications to "${name}" and remove the bot from the group?`,
+    quota: "LINE counts messages per group member: one message to a 20-person group = 20 messages.",
   },
 });
 
@@ -94,6 +114,20 @@ export default async function NotificationsPage({
   const hubChannels = hub ? [...new Set([...HUB_CHANNELS, ...Object.keys(hub.channels ?? {})])] : [];
   const linked = hubChannels.filter((c) => hub?.channels?.[c]?.status && hub.channels[c]!.status !== "not_linked");
   const banner = discordResult ? t.discord[discordResult] : undefined;
+
+  // Company admins: the LINE / Telegram groups linked to this company (off until HUB_GROUPS_ENABLED=1).
+  const isAdmin = member.role === "ADMIN";
+  const groupsOn = isAdmin && hubGroupsEnabled();
+  let groups: HubGroup[] = [];
+  let groupsError = false;
+  if (groupsOn) {
+    try {
+      groups = await hubGroups(member.org.slug);
+    } catch (err) {
+      console.error("[notifications] Hub groups failed:", err);
+      groupsError = true;
+    }
+  }
 
   return (
     <article className="card panel article" style={{ maxWidth: 640 }}>
@@ -178,6 +212,47 @@ export default async function NotificationsPage({
         <div style={{ marginTop: 20 }}>
           <TestNotificationButton slug={slug} />
         </div>
+      )}
+
+      {isAdmin && (
+        <>
+          <h2 style={{ marginTop: 28, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            {t.groups} {!groupsOn && <span className="chip warn">{t.soon}</span>}
+          </h2>
+          <p className="body" style={{ marginBottom: 12 }}>{t.groupsLead}</p>
+          {!groupsOn ? (
+            <div className="notice">
+              {t.groupsSoon}{" "}
+              <Link href={withLocale(locale, orgPath(slug, "/notifications/guide#groups"))} className="inline-link">
+                {t.groupsGuide}
+              </Link>
+            </div>
+          ) : groupsError ? (
+            <div className="notice error">{t.unreachable}</div>
+          ) : (
+            <>
+              {groups.length === 0 && <p className="body">{t.noGroups}</p>}
+              {groups.map((g) => (
+                <div key={g.groupId} className="workrow" style={{ flexWrap: "wrap" }}>
+                  <span className="wtitle">
+                    <b>{g.name}</b>
+                    <small>{g.status === "left" ? t.groupLeft : t.groupMeta(NAMES[g.channel] ?? g.channel, g.memberCount)}</small>
+                  </span>
+                  {g.status === "connected" && <GroupTestButton slug={slug} groupId={g.groupId} name={g.name} />}
+                  <form action={unlinkGroup.bind(null, slug, g.groupId)}>
+                    <ConfirmButton className="btn tiny" message={t.unlinkGroupConfirm(g.name)}>
+                      {t.unlink}
+                    </ConfirmButton>
+                  </form>
+                </div>
+              ))}
+              <div style={{ marginTop: 12 }}>
+                <ConnectGroupButton slug={slug} />
+              </div>
+              <p className="body" style={{ marginTop: 12, fontSize: 13 }}>{t.quota}</p>
+            </>
+          )}
+        </>
       )}
     </article>
   );

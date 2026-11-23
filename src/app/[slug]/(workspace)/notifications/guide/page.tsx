@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { orgPath, requireMember } from "@/lib/context";
+import { hubGroupsEnabled } from "@/lib/hub";
 import { defineText, withLocale } from "@/i18n";
 import { getLocale } from "@/i18n/server";
 
 // Customer-facing setup guide for LINE / Telegram / Discord notifications (people set it up themselves).
 // Group notifications need the Notification Hub's group API (docs/HUB-GROUPS-REQUEST.md): until
 // HUB_GROUPS_ENABLED=1 is set that section shows as "coming soon".
-const groupsEnabled = () => process.env.HUB_GROUPS_ENABLED === "1";
+const groupsEnabled = () => hubGroupsEnabled();
 
 type Section = { id: string; title: string; who?: string; soon?: boolean; intro?: string; steps: string[]; notes?: string[] };
 
@@ -89,7 +90,7 @@ const TEXT = defineText({
           "ในกลุ่ม LINE: กดชื่อกลุ่ม › เชิญ แล้วค้นหาและเชิญ Iex.Notification ในกลุ่ม Telegram: เพิ่มบอทแจ้งเตือนเป็นสมาชิก",
           "ใครก็ได้ในกลุ่มพิมพ์คำสั่ง /link ตามด้วยรหัส เช่น /link K7P2QX",
           "บอทตอบยืนยันในกลุ่ม และกลุ่มจะขึ้นในรายการ กลุ่มแจ้งเตือน ของ Portal",
-          "ใน Task ตั้ง Automation › Action เลือก ส่งเข้ากลุ่ม LINE / Telegram แล้วเลือกกลุ่ม",
+          "ใน Task ตั้ง Automation › Action เลือก Send to LINE / Telegram group แล้วเลือกกลุ่ม ใส่ข้อความเองได้เหมือนการส่งส่วนตัว",
         ],
         notes: [
           "บอทที่ถูกเชิญเข้ากลุ่มเฉย ๆ จะไม่ส่งอะไรเข้ากลุ่ม จนกว่าจะพิมพ์ /link ด้วยรหัสจาก Portal",

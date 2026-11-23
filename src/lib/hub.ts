@@ -141,3 +141,67 @@ export async function hubUserChannels(orgSlug: string, userId: string) {
 export async function setHubPrimary(orgSlug: string, userId: string, channel: HubChannel) {
   await hub("PUT", `/v1/users/${encodeURIComponent(userId)}/primary`, { company: company(orgSlug), channel });
 }
+
+// ---- Group chats (LINE / Telegram groups) ----
+// Built against docs/HUB-GROUPS-REQUEST.md before the Hub has it. Off until HUB_GROUPS_ENABLED=1;
+// when the Hub's real API arrives, adjust these five functions to match it.
+
+export type HubGroupStatus = "connected" | "left";
+export type HubGroup = {
+  groupId: string;
+  channel: HubChannel;
+  name: string;
+  status: HubGroupStatus;
+  memberCount?: number;
+  linkedAt?: string;
+  linkedBy?: { userId?: string; email?: string };
+};
+export type HubGroupKey = { key: string; expiresAt: string; command?: string };
+export type HubGroupResult = { group: string; status: "sent" | "left" | "not_found" | "failed"; channel?: HubChannel; memberCount?: number; error?: string };
+
+export function hubGroupsEnabled() {
+  return hubConfigured() && process.env.HUB_GROUPS_ENABLED === "1";
+}
+
+/** API #5: one-time key a group types as `/link <key>` to belong to this company (15 min, one group). */
+export async function createGroupLinkKey(org: { slug: string; name: string }, user: { id: string; email: string }) {
+  const { data } = await hub<HubGroupKey>("POST", "/v1/group-link-keys", {
+    company: company(org.slug),
+    companyName: org.name.slice(0, 100),
+    requestedBy: { userId: user.id, email: user.email },
+  });
+  return { ...data, command: data.command || `/link ${data.key}` };
+}
+
+/** API #6: the company's linked groups. */
+export async function hubGroups(orgSlug: string) {
+  const { data } = await hub<{ groups: HubGroup[] }>("GET", `/v1/groups?company=${encodeURIComponent(company(orgSlug))}`);
+  return data.groups ?? [];
+}
+
+/** API #7: stop sending to a group; `leave` also takes the bot out of it. */
+export async function unlinkHubGroup(orgSlug: string, groupId: string, leave = true) {
+  const { data } = await hub<{ unlinked: boolean }>("POST", `/v1/groups/${encodeURIComponent(groupId)}/unlink`, {
+    company: company(orgSlug),
+    leave,
+  });
+  return data.unlinked;
+}
+
+/** /v1/events with to.groups: one text to some of the company's groups (max 50). */
+export async function sendHubGroups(org: { slug: string; name: string }, groupIds: string[], text: string, idempotencyKey: string, ref?: string) {
+  const { data } = await hub<{ messageId: string; groups?: HubGroupResult[] }>(
+    "POST",
+    "/v1/events",
+    {
+      company: company(org.slug),
+      companyName: org.name.slice(0, 100),
+      event: "common.announcement",
+      to: { users: [], groups: groupIds.slice(0, 50) },
+      data: { text: openLinksInExternalBrowser(text).slice(0, 4900) },
+      ...(ref ? { ref: ref.slice(0, 128) } : {}),
+    },
+    { timeoutMs: 60_000, idempotencyKey },
+  );
+  return data.groups ?? [];
+}
