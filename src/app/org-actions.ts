@@ -9,6 +9,8 @@ import { orgPath, requireAdmin, requireUser, slugFrom } from "@/lib/context";
 import { db } from "@/lib/db";
 import { PUBLIC_EMAIL_DOMAINS } from "@/lib/identity";
 import { domainTxtName } from "@/lib/portal";
+import { defineText } from "@/i18n";
+import { getLocale, localePath } from "@/i18n/server";
 
 const MAX_ORGS_CREATED_PER_DAY = 3;
 const newCode = () => randomBytes(9).toString("base64url");
@@ -16,12 +18,54 @@ const newCode = () => randomBytes(9).toString("base64url");
 // "/" and Auth.js's /api; reserve that plus a few infrastructure names.
 const RESERVED_SLUGS = new Set(["api", "assets", "static", "www", "superadmin"]);
 
+const TEXT = defineText({
+  th: {
+    slugFormat: "รหัสบริษัทใช้ a-z, 0-9, - และ _ ได้ 3–30 ตัว (ห้ามขึ้นต้นหรือลงท้ายด้วย - หรือ _)",
+    slugReserved: "รหัสนี้สงวนไว้ กรุณาใช้รหัสอื่น",
+    slugTaken: "รหัสบริษัทนี้ถูกใช้แล้ว",
+    nameLength: "กรุณากรอกชื่อบริษัท 2–100 ตัวอักษร",
+    tooManyOrgs: "สร้างบริษัทได้ไม่เกิน 3 แห่งต่อวัน",
+    badJoinCode: "ลิงก์หรือรหัสเข้าร่วมไม่ถูกต้อง",
+    joinNotFound: "ไม่พบลิงก์เข้าร่วมนี้ หรือถูกปิดไปแล้ว",
+    profileSaved: "บันทึกข้อมูลบริษัทแล้ว",
+    badDomain: "รูปแบบโดเมนไม่ถูกต้อง เช่น abc.co.th",
+    publicDomain: "โดเมนอีเมลสาธารณะ (เช่น gmail.com) ใช้ไม่ได้ กรุณาใช้ลิงก์เข้าร่วมแทน",
+    domainTaken: "โดเมนนี้ถูกยืนยันโดยบริษัทอื่นแล้ว",
+    domainAdded: (d: string) => `เพิ่ม ${d} แล้ว · เพิ่ม TXT record ด้านล่างแล้วกดตรวจสอบ`,
+    domainMissing: "ไม่พบโดเมน",
+    txtMissing: (name: string) => `ยังไม่พบ TXT record ที่ ${name} (DNS อาจใช้เวลาหลายนาทีถึงหลายชั่วโมง)`,
+    txtMismatch: "พบ TXT record แต่ค่าไม่ตรง กรุณาตรวจสอบอีกครั้ง",
+    verified: (d: string) => `ยืนยัน ${d} สำเร็จ`,
+  },
+  en: {
+    slugFormat: "The company code is 3–30 of a-z, 0-9, - and _ (not starting or ending with - or _).",
+    slugReserved: "This code is reserved. Please choose another.",
+    slugTaken: "This company code is already taken.",
+    nameLength: "Please enter a company name of 2–100 characters.",
+    tooManyOrgs: "You can create at most 3 companies a day.",
+    badJoinCode: "The join link or code is not valid.",
+    joinNotFound: "This join link was not found, or it has been turned off.",
+    profileSaved: "Company details saved.",
+    badDomain: "The domain is not valid, e.g. abc.co.th",
+    publicDomain: "Public email domains (such as gmail.com) can't be used. Use a join link instead.",
+    domainTaken: "Another company has already verified this domain.",
+    domainAdded: (d: string) => `Added ${d} · add the TXT record below, then press Verify.`,
+    domainMissing: "Domain not found.",
+    txtMissing: (name: string) => `No TXT record found at ${name} yet (DNS can take minutes to hours).`,
+    txtMismatch: "A TXT record was found but its value doesn't match. Please check it.",
+    verified: (d: string) => `${d} verified.`,
+  },
+});
+
+const text = async () => TEXT[await getLocale()];
+
 /** Company code used in URLs (/<slug>): 3–30 of a-z, 0-9 and inner hyphens / underscores. */
 async function slugError(slug: string, exceptOrgId?: string) {
-  if (!/^[a-z0-9](?:[a-z0-9_-]{1,28})[a-z0-9]$/.test(slug)) return "รหัสบริษัทใช้ a-z, 0-9, - และ _ ได้ 3–30 ตัว (ห้ามขึ้นต้นหรือลงท้ายด้วย - หรือ _)";
-  if (RESERVED_SLUGS.has(slug)) return "รหัสนี้สงวนไว้ กรุณาใช้รหัสอื่น";
+  const t = await text();
+  if (!/^[a-z0-9](?:[a-z0-9_-]{1,28})[a-z0-9]$/.test(slug)) return t.slugFormat;
+  if (RESERVED_SLUGS.has(slug)) return t.slugReserved;
   const taken = await db.org.findUnique({ where: { slug }, select: { id: true } });
-  if (taken && taken.id !== exceptOrgId) return "รหัสบริษัทนี้ถูกใช้แล้ว";
+  if (taken && taken.id !== exceptOrgId) return t.slugTaken;
   return null;
 }
 
@@ -31,37 +75,37 @@ export async function createOrg(_: FormState, form: FormData): Promise<FormState
   const user = await requireUser();
   const name = String(form.get("name") ?? "").trim();
   const slug = String(form.get("slug") ?? "").trim().toLowerCase();
-  if (name.length < 2 || name.length > 100) return { error: "กรุณากรอกชื่อบริษัท 2–100 ตัวอักษร" };
+  if (name.length < 2 || name.length > 100) return { error: (await text()).nameLength };
   const bad = await slugError(slug);
   if (bad) return { error: bad };
   const recent = await db.membership.count({
     where: { userId: user.id, role: "ADMIN", createdAt: { gt: new Date(Date.now() - 86_400_000) } },
   });
-  if (recent >= MAX_ORGS_CREATED_PER_DAY) return { error: "สร้างบริษัทได้ไม่เกิน 3 แห่งต่อวัน" };
+  if (recent >= MAX_ORGS_CREATED_PER_DAY) return { error: (await text()).tooManyOrgs };
 
   await db.org.create({ data: { name, slug, memberships: { create: { userId: user.id, role: "ADMIN" } } } });
-  redirect(orgPath(slug, "/admin?tab=access"));
+  redirect(await localePath(orgPath(slug, "/admin?tab=access")));
 }
 
 /** Accepts a pasted join link (…/abc/join/<code>) or just its code. */
 export async function goToJoinCode(_: FormState, form: FormData): Promise<FormState> {
   const raw = String(form.get("code") ?? "").trim();
   const code = raw.split("/join/").pop()?.split(/[?#]/)[0] ?? "";
-  if (!/^[A-Za-z0-9_-]{6,40}$/.test(code)) return { error: "ลิงก์หรือรหัสเข้าร่วมไม่ถูกต้อง" };
+  if (!/^[A-Za-z0-9_-]{6,40}$/.test(code)) return { error: (await text()).badJoinCode };
   const org = await db.org.findFirst({ where: { joinCode: code, joinMode: { not: "OFF" } }, select: { slug: true } });
-  if (!org) return { error: "ไม่พบลิงก์เข้าร่วมนี้ หรือถูกปิดไปแล้ว" };
-  redirect(orgPath(org.slug, `/join/${code}`));
+  if (!org) return { error: (await text()).joinNotFound };
+  redirect(await localePath(orgPath(org.slug, `/join/${code}`)));
 }
 
 export async function joinByCode(slug: string, code: string) {
-  const joinUrl = orgPath(slug, `/join/${code}`);
+  const joinUrl = await localePath(orgPath(slug, `/join/${code}`));
   const user = await requireUser(joinUrl);
   const org = await db.org.findFirst({ where: { slug, joinCode: code, joinMode: { not: "OFF" } } });
   if (!org) redirect(joinUrl);
   const member = await db.membership.findUnique({ where: { orgId_userId: { orgId: org.id, userId: user.id } } });
   if (member || org.joinMode === "OPEN") {
     if (!member) await db.membership.create({ data: { orgId: org.id, userId: user.id } });
-    redirect(orgPath(org.slug));
+    redirect(await localePath(orgPath(org.slug)));
   }
   await db.joinRequest.upsert({ where: { orgId_userId: { orgId: org.id, userId: user.id } }, update: {}, create: { orgId: org.id, userId: user.id } });
   redirect(joinUrl);
@@ -73,13 +117,14 @@ export async function updateOrgProfile(_: FormState, form: FormData): Promise<Fo
   const admin = await requireAdmin(slugFrom(form));
   const name = String(form.get("name") ?? "").trim();
   const slug = String(form.get("slug") ?? "").trim().toLowerCase();
-  if (name.length < 2 || name.length > 100) return { error: "กรุณากรอกชื่อบริษัท 2–100 ตัวอักษร" };
+  const t = await text();
+  if (name.length < 2 || name.length > 100) return { error: t.nameLength };
   const bad = await slugError(slug, admin.orgId);
   if (bad) return { error: bad };
   await db.org.update({ where: { id: admin.orgId }, data: { name, slug } });
   revalidatePath("/", "layout");
-  if (slug !== admin.org.slug) redirect(orgPath(slug, "/admin?tab=access"));
-  return { ok: "บันทึกข้อมูลบริษัทแล้ว" };
+  if (slug !== admin.org.slug) redirect(await localePath(orgPath(slug, "/admin?tab=access")));
+  return { ok: t.profileSaved };
 }
 
 // ---- Admin: join link ----
@@ -117,10 +162,11 @@ export async function decideJoinRequest(slug: string, id: string, approve: boole
 export async function addDomain(_: FormState, form: FormData): Promise<FormState> {
   const admin = await requireAdmin(slugFrom(form));
   const domain = String(form.get("domain") ?? "").trim().toLowerCase().replace(/^.*@/, "");
-  if (!/^(?=.{4,191}$)([a-z0-9-]+\.)+[a-z]{2,}$/.test(domain)) return { error: "รูปแบบโดเมนไม่ถูกต้อง เช่น abc.co.th" };
-  if (PUBLIC_EMAIL_DOMAINS.has(domain)) return { error: "โดเมนอีเมลสาธารณะ (เช่น gmail.com) ใช้ไม่ได้ กรุณาใช้ลิงก์เข้าร่วมแทน" };
+  const t = await text();
+  if (!/^(?=.{4,191}$)([a-z0-9-]+\.)+[a-z]{2,}$/.test(domain)) return { error: t.badDomain };
+  if (PUBLIC_EMAIL_DOMAINS.has(domain)) return { error: t.publicDomain };
   if (await db.orgDomain.findFirst({ where: { domain, verifiedAt: { not: null }, orgId: { not: admin.orgId } } })) {
-    return { error: "โดเมนนี้ถูกยืนยันโดยบริษัทอื่นแล้ว" };
+    return { error: t.domainTaken };
   }
   await db.orgDomain.upsert({
     where: { orgId_domain: { orgId: admin.orgId, domain } },
@@ -128,26 +174,27 @@ export async function addDomain(_: FormState, form: FormData): Promise<FormState
     create: { orgId: admin.orgId, domain, verifyToken: `iexcellence-verify=${newCode()}` },
   });
   revalidatePath("/", "layout");
-  return { ok: `เพิ่ม ${domain} แล้ว · เพิ่ม TXT record ด้านล่างแล้วกดตรวจสอบ` };
+  return { ok: t.domainAdded(domain) };
 }
 
 export async function verifyDomain(_: FormState, form: FormData): Promise<FormState> {
   const admin = await requireAdmin(slugFrom(form));
   const d = await db.orgDomain.findFirst({ where: { id: String(form.get("id")), orgId: admin.orgId } });
-  if (!d) return { error: "ไม่พบโดเมน" };
+  const t = await text();
+  if (!d) return { error: t.domainMissing };
   let records: string[] = [];
   try {
     records = (await resolveTxt(domainTxtName(d.domain))).map((parts) => parts.join(""));
   } catch {
-    return { error: `ยังไม่พบ TXT record ที่ ${domainTxtName(d.domain)} (DNS อาจใช้เวลาหลายนาทีถึงหลายชั่วโมง)` };
+    return { error: t.txtMissing(domainTxtName(d.domain)) };
   }
-  if (!records.includes(d.verifyToken)) return { error: "พบ TXT record แต่ค่าไม่ตรง กรุณาตรวจสอบอีกครั้ง" };
+  if (!records.includes(d.verifyToken)) return { error: t.txtMismatch };
   if (await db.orgDomain.findFirst({ where: { domain: d.domain, verifiedAt: { not: null }, orgId: { not: admin.orgId } } })) {
-    return { error: "โดเมนนี้ถูกยืนยันโดยบริษัทอื่นแล้ว" };
+    return { error: t.domainTaken };
   }
   await db.orgDomain.update({ where: { id: d.id }, data: { verifiedAt: new Date() } });
   revalidatePath("/", "layout");
-  return { ok: `ยืนยัน ${d.domain} สำเร็จ` };
+  return { ok: t.verified(d.domain) };
 }
 
 export async function toggleDomainAutoJoin(slug: string, id: string) {

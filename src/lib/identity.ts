@@ -1,6 +1,7 @@
 import { createHash, randomInt, timingSafeEqual } from "node:crypto";
 import { hash, verify } from "@node-rs/argon2";
 import { db } from "@/lib/db";
+import { defineText, type Locale } from "@/i18n";
 
 const MAX_FAILED_LOGINS = 5;
 const LOCK_MINUTES = 15;
@@ -125,10 +126,16 @@ export async function consumeEmailCode(email: string, code: string) {
   return ok;
 }
 
-export function validatePassword(pw: string) {
-  if (pw.length < 10) return "รหัสผ่านต้องยาวอย่างน้อย 10 ตัวอักษร";
-  if (pw.length > 128) return "รหัสผ่านยาวเกินไป";
-  if (!/[A-Za-z]/.test(pw) || !/\d/.test(pw)) return "รหัสผ่านต้องมีทั้งตัวอักษรและตัวเลข";
+const PASSWORD_TEXT = defineText({
+  th: { short: "รหัสผ่านต้องยาวอย่างน้อย 10 ตัวอักษร", long: "รหัสผ่านยาวเกินไป", mix: "รหัสผ่านต้องมีทั้งตัวอักษรและตัวเลข" },
+  en: { short: "The password must be at least 10 characters.", long: "The password is too long.", mix: "The password must contain both letters and numbers." },
+});
+
+export function validatePassword(pw: string, locale: Locale) {
+  const t = PASSWORD_TEXT[locale];
+  if (pw.length < 10) return t.short;
+  if (pw.length > 128) return t.long;
+  if (!/[A-Za-z]/.test(pw) || !/\d/.test(pw)) return t.mix;
   return null;
 }
 

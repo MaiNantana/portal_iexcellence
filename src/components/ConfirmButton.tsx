@@ -1,12 +1,13 @@
 "use client";
 
 import { useRef } from "react";
+import { useLocale } from "@/i18n/client";
 
 /** A submit button inside a form that asks first; the form is only submitted after "ยืนยัน". */
 export function ConfirmButton({
   className,
   message,
-  confirmLabel = "ยืนยัน",
+  confirmLabel,
   style,
   title,
   children,
@@ -18,6 +19,7 @@ export function ConfirmButton({
   title?: string;
   children: React.ReactNode;
 }) {
+  const th = useLocale() === "th";
   const trigger = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
 
@@ -30,7 +32,7 @@ export function ConfirmButton({
         <p>{message}</p>
         <div className="confirm-actions">
           <button type="button" className="btn" onClick={() => dialog.current?.close()}>
-            ยกเลิก
+            {th ? "ยกเลิก" : "Cancel"}
           </button>
           <button
             type="button"
@@ -40,7 +42,7 @@ export function ConfirmButton({
               trigger.current?.form?.requestSubmit();
             }}
           >
-            {confirmLabel}
+            {confirmLabel ?? (th ? "ยืนยัน" : "Confirm")}
           </button>
         </div>
       </dialog>

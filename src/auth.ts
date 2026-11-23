@@ -4,8 +4,10 @@ import type { Provider } from "next-auth/providers";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
+import { cookies } from "next/headers";
 import { db } from "@/lib/db";
 import { checkPassword, normalizeEmail, resolveOAuthUser } from "@/lib/identity";
+import { BROWSER_COOKIE, REMEMBER_COOKIE, SESSION_MAX_AGE, SHORT_SESSION_MS } from "@/lib/remember";
 import { isSuperadmin } from "@/lib/superadmin";
 
 class PasswordSignInError extends CredentialsSignin {
@@ -20,14 +22,14 @@ export const microsoftEnabled = !!process.env.AUTH_MICROSOFT_ENTRA_ID_ID;
 
 const providers: Provider[] = [
   Credentials({
-    credentials: { email: {}, password: {} },
+    credentials: { email: {}, password: {}, remember: {} },
     async authorize(raw) {
       const email = normalizeEmail(raw?.email);
       const password = String(raw?.password ?? "");
       if (!email || !password) throw new PasswordSignInError("invalid");
       const result = await checkPassword(email, password);
       if ("error" in result) throw new PasswordSignInError(result.error);
-      return { id: result.userId, email };
+      return { id: result.userId, email, remember: raw?.remember !== "0" };
     },
   }),
 ];
@@ -50,7 +52,7 @@ function verifiedEmail(provider: string, profile: Profile | undefined) {
 
 export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
   providers,
-  session: { strategy: "jwt", maxAge: 8 * 60 * 60 },
+  session: { strategy: "jwt", maxAge: SESSION_MAX_AGE },
   pages: { signIn: "/", error: "/" },
   callbacks: {
     async signIn({ account, profile }) {
@@ -72,6 +74,21 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
           if (real && isSuperadmin(real.email) && target && target.id !== token.uid) token.actAs = target.id;
         }
         return token;
+      }
+      if (account) {
+        // Sign-in: an unremembered session gets a hard end, and dies with the browser (see below).
+        const jar = await cookies();
+        const remember = account.type === "credentials" ? user.remember !== false : jar.get(REMEMBER_COOKIE)?.value !== "0";
+        if (remember) delete token.until;
+        else token.until = Date.now() + SHORT_SESSION_MS;
+      } else if (typeof token.until === "number") {
+        let browserOpen = true;
+        try {
+          browserOpen = (await cookies()).has(BROWSER_COOKIE);
+        } catch {
+          // no request scope: only the time limit applies
+        }
+        if (!browserOpen || Date.now() > token.until) return null;
       }
       if (account?.type === "credentials") {
         token.uid = user.id;

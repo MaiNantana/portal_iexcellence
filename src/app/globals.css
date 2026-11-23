@@ -217,6 +217,8 @@ dialog.confirm p{margin:0;font-size:15px;line-height:1.65;white-space:normal;fon
 .login .logo{margin:0 auto 4px;width:52px;height:52px;border-radius:14px}
 .login .logo.logo-inline{margin:0}
 .login-form{text-align:left}
+.remember{display:flex;align-items:center;gap:8px;margin:4px 0 0;font-size:13px;color:var(--ink-2);cursor:pointer;user-select:none}
+.remember input{width:16px;height:16px;margin:0;accent-color:var(--accent);cursor:pointer}
 .login-foot{font-size:13px;color:var(--muted);margin:18px 0 0}
 .sso-buttons{display:flex;flex-direction:column;gap:9px}
 .btn.sso{width:100%;padding:11px;justify-content:center}
@@ -326,3 +328,13 @@ dialog.confirm p{margin:0;font-size:15px;line-height:1.65;white-space:normal;fon
 .sa-org small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
 .sa-admin{display:flex;align-items:center;gap:10px;border-top:1px solid var(--line);padding:9px 0 0;margin-top:9px}
 .sa-email{display:block;overflow-wrap:anywhere;font-size:14px}
+
+/* Language switch (TH | EN): header and login cards */
+.langswitch{display:inline-flex;height:36px;border:1px solid var(--line);border-radius:9px;background:#fff;overflow:hidden;flex:none}
+.langswitch button{border:0;background:none;padding:0 9px;font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.03em}
+.langswitch button+button{border-left:1px solid var(--line)}
+.langswitch button.sel{background:var(--soft);color:var(--accent);cursor:default}
+.langswitch button:not(.sel):hover{color:var(--ink);background:#faf9f7}
+.login .card{position:relative}
+.login-lang{position:absolute;top:14px;right:14px;height:30px}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}

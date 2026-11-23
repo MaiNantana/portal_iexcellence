@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { startTransition, useActionState, useEffect, useRef } from "react";
 import type { FormState } from "@/app/actions";
+import { useLocale } from "@/i18n/client";
 
 /**
  * Form bound to a server action that returns { error } or { ok }; resets itself on success.
@@ -26,6 +27,7 @@ export function ActionForm({
   cancelHref?: string;
   children: React.ReactNode;
 }) {
+  const th = useLocale() === "th";
   const [state, formAction, pending] = useActionState(action, undefined);
   const ref = useRef<HTMLFormElement>(null);
 
@@ -49,11 +51,11 @@ export function ActionForm({
       <div className="form-actions">
         {cancelHref && (
           <Link href={cancelHref} className="btn">
-            ยกเลิก
+            {th ? "ยกเลิก" : "Cancel"}
           </Link>
         )}
         <button className="btn primary" disabled={pending}>
-          {pending ? "กำลังบันทึก..." : submitLabel}
+          {pending ? (th ? "กำลังบันทึก..." : "Saving...") : submitLabel}
         </button>
       </div>
     </form>

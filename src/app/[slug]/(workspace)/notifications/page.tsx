@@ -6,16 +6,63 @@ import { orgPath, requireMember } from "@/lib/context";
 import { db } from "@/lib/db";
 import { discordConfigured } from "@/lib/discord";
 import { HUB_CHANNELS, hubConfigured, hubUserChannels, type HubUserChannels } from "@/lib/hub";
+import { defineText, withLocale } from "@/i18n";
+import { getLocale } from "@/i18n/server";
 
 const NAMES: Record<string, string> = { line: "LINE", telegram: "Telegram", discord: "Discord" };
 
-const DISCORD_MESSAGES: Record<string, { ok: boolean; text: string }> = {
-  ok: { ok: true, text: "เชื่อม Discord แล้ว ✓ ดูข้อความยืนยันใน DM ของ Discord" },
-  cancelled: { ok: false, text: "ยกเลิกการเชื่อม Discord" },
-  error: { ok: false, text: "เชื่อม Discord ไม่สำเร็จ ลองใหม่อีกครั้ง" },
-  off: { ok: false, text: "Discord ยังไม่เปิดให้ใช้งาน" },
-  acting: { ok: false, text: "ระหว่างสวมรอยเชื่อม Discord แทนคนอื่นไม่ได้" },
-};
+const TEXT = defineText({
+  th: {
+    discord: {
+      ok: { ok: true, text: "เชื่อม Discord แล้ว ✓ ดูข้อความยืนยันใน DM ของ Discord" },
+      cancelled: { ok: false, text: "ยกเลิกการเชื่อม Discord" },
+      error: { ok: false, text: "เชื่อม Discord ไม่สำเร็จ ลองใหม่อีกครั้ง" },
+      off: { ok: false, text: "Discord ยังไม่เปิดให้ใช้งาน" },
+      acting: { ok: false, text: "ระหว่างสวมรอยเชื่อม Discord แทนคนอื่นไม่ได้" },
+    } as Record<string, { ok: boolean; text: string }>,
+    back: "‹ กลับหน้าแรก",
+    title: "ช่องทางรับแจ้งเตือน",
+    lead: (email: string) => `แจ้งเตือนจาก HR และ Task (เช่น งานรออนุมัติ งานใกล้ครบกำหนด) ยังส่งทางอีเมล ${email} เหมือนเดิม และส่งทางช่องทางที่เชื่อมไว้ด้านล่างด้วย`,
+    notAvailable: "ยังไม่เปิดให้ใช้งาน",
+    unreachable: "ติดต่อระบบแจ้งเตือนไม่ได้ ลองใหม่อีกครั้ง",
+    primary: "★ ช่องทางหลัก",
+    connected: "เชื่อมแล้ว",
+    blocked: (name: string) => `เชื่อมแล้ว แต่บล็อกบัญชีแจ้งเตือนอยู่ · ปลดบล็อกใน ${name}`,
+    notConnected: "ยังไม่เชื่อม",
+    makePrimary: "ใช้เป็นช่องทางหลัก",
+    unlinkConfirm: (name: string) => `ยกเลิกการรับแจ้งเตือนทาง ${name}?`,
+    unlink: "ยกเลิก",
+    primaryNote: "แจ้งเตือนส่งทางช่องทางหลักช่องทางเดียว ถ้าส่งไม่ถึง (บล็อก) จะลองอีกช่องทาง",
+    discordLinked: (who: string) => `เชื่อมแล้ว · ${who} · รับเป็นข้อความส่วนตัว (DM)`,
+    discordNotLinked: "ยังไม่เชื่อม · จะเข้าร่วมเซิร์ฟเวอร์ Discord ของ iExcellence เพื่อรับ DM",
+    connectDiscord: "เชื่อม Discord",
+  },
+  en: {
+    discord: {
+      ok: { ok: true, text: "Discord connected ✓ Check the confirmation in your Discord DMs" },
+      cancelled: { ok: false, text: "Discord connection cancelled" },
+      error: { ok: false, text: "Couldn't connect Discord. Please try again." },
+      off: { ok: false, text: "Discord is not available yet" },
+      acting: { ok: false, text: "You can't connect Discord while acting as someone else" },
+    },
+    back: "‹ Back to home",
+    title: "Notification channels",
+    lead: (email: string) => `HR and Task notifications (such as approvals and tasks coming due) still go to ${email}, and also to the channels you connect below.`,
+    notAvailable: "Not available yet",
+    unreachable: "Can't reach the notification service. Please try again.",
+    primary: "★ main channel",
+    connected: "Connected",
+    blocked: (name: string) => `Connected, but the notification account is blocked · unblock it in ${name}`,
+    notConnected: "Not connected",
+    makePrimary: "Make main channel",
+    unlinkConfirm: (name: string) => `Stop notifications on ${name}?`,
+    unlink: "Disconnect",
+    primaryNote: "Notifications go to the main channel only. If it can't be reached (blocked), the other channel is tried.",
+    discordLinked: (who: string) => `Connected · ${who} · sent as direct messages (DM)`,
+    discordNotLinked: "Not connected · you'll join the iExcellence Discord server to receive DMs",
+    connectDiscord: "Connect Discord",
+  },
+});
 
 /** The member's own notification channels: LINE / Telegram (via the Notification Hub) and Discord. */
 export default async function NotificationsPage({
@@ -28,6 +75,8 @@ export default async function NotificationsPage({
   const { slug } = await params;
   const { discord: discordResult } = await searchParams;
   const member = await requireMember(slug);
+  const locale = await getLocale();
+  const t = TEXT[locale];
 
   let hub: HubUserChannels | null = null;
   let hubError = false;
@@ -42,39 +91,35 @@ export default async function NotificationsPage({
   const discord = await db.discordLink.findUnique({ where: { userId: member.userId } });
   const hubChannels = hub ? [...new Set([...HUB_CHANNELS, ...Object.keys(hub.channels ?? {})])] : [];
   const linked = hubChannels.filter((c) => hub?.channels?.[c]?.status && hub.channels[c]!.status !== "not_linked");
-  const banner = discordResult ? DISCORD_MESSAGES[discordResult] : undefined;
+  const banner = discordResult ? t.discord[discordResult] : undefined;
 
   return (
     <article className="card panel article" style={{ maxWidth: 640 }}>
-      <Link href={orgPath(slug)} className="inline-link">
-        ‹ กลับหน้าแรก
+      <Link href={withLocale(locale, orgPath(slug))} className="inline-link">
+        {t.back}
       </Link>
-      <h1>ช่องทางรับแจ้งเตือน</h1>
-      <p className="body">
-        แจ้งเตือนจาก HR และ Task (เช่น งานรออนุมัติ งานใกล้ครบกำหนด) ยังส่งทางอีเมล {member.user.email} เหมือนเดิม
-        และส่งทางช่องทางที่เชื่อมไว้ด้านล่างด้วย
-      </p>
+      <h1>{t.title}</h1>
+      <p className="body">{t.lead(member.user.email)}</p>
       {banner && <div className={`notice ${banner.ok ? "ok" : "error"}`}>{banner.text}</div>}
 
       <h2 style={{ marginTop: 20 }}>LINE / Telegram</h2>
       {!hubConfigured() ? (
-        <div className="notice">ยังไม่เปิดให้ใช้งาน</div>
+        <div className="notice">{t.notAvailable}</div>
       ) : hubError ? (
-        <div className="notice error">ติดต่อระบบแจ้งเตือนไม่ได้ ลองใหม่อีกครั้ง</div>
+        <div className="notice error">{t.unreachable}</div>
       ) : (
         <>
           {hubChannels.map((c) => {
             const status = hub?.channels?.[c]?.status ?? "not_linked";
             const primary = hub?.primary === c;
+            const name = NAMES[c] ?? c;
             return (
               <div key={c} className="workrow" style={{ flexWrap: "wrap" }}>
                 <span className="wtitle">
                   <b>
-                    {NAMES[c] ?? c} {primary && linked.length > 1 && "★ ช่องทางหลัก"}
+                    {name} {primary && linked.length > 1 && t.primary}
                   </b>
-                  <small>
-                    {status === "connected" ? "เชื่อมแล้ว" : status === "blocked" ? `เชื่อมแล้ว แต่บล็อกบัญชีแจ้งเตือนอยู่ · ปลดบล็อกใน ${NAMES[c] ?? c}` : "ยังไม่เชื่อม"}
-                  </small>
+                  <small>{status === "connected" ? t.connected : status === "blocked" ? t.blocked(name) : t.notConnected}</small>
                 </span>
                 {status === "not_linked" ? (
                   (c === "line" || c === "telegram") && <ConnectChannelButton slug={slug} channel={c} />
@@ -82,12 +127,12 @@ export default async function NotificationsPage({
                   <>
                     {!primary && linked.length > 1 && (
                       <form action={choosePrimary.bind(null, slug, c)}>
-                        <button className="btn tiny">ใช้เป็นช่องทางหลัก</button>
+                        <button className="btn tiny">{t.makePrimary}</button>
                       </form>
                     )}
                     <form action={unlinkChannel.bind(null, slug, c)}>
-                      <ConfirmButton className="btn tiny" message={`ยกเลิกการรับแจ้งเตือนทาง ${NAMES[c] ?? c}?`}>
-                        ยกเลิก
+                      <ConfirmButton className="btn tiny" message={t.unlinkConfirm(name)}>
+                        {t.unlink}
                       </ConfirmButton>
                     </form>
                   </>
@@ -95,28 +140,28 @@ export default async function NotificationsPage({
               </div>
             );
           })}
-          {linked.length > 1 && <p className="body">แจ้งเตือนส่งทางช่องทางหลักช่องทางเดียว ถ้าส่งไม่ถึง (บล็อก) จะลองอีกช่องทาง</p>}
+          {linked.length > 1 && <p className="body">{t.primaryNote}</p>}
         </>
       )}
 
       <h2 style={{ marginTop: 20 }}>Discord</h2>
       {!discordConfigured() ? (
-        <div className="notice">ยังไม่เปิดให้ใช้งาน</div>
+        <div className="notice">{t.notAvailable}</div>
       ) : (
         <div className="workrow">
           <span className="wtitle">
             <b>Discord</b>
-            <small>{discord ? `เชื่อมแล้ว · ${discord.username ?? discord.discordUserId} · รับเป็นข้อความส่วนตัว (DM)` : "ยังไม่เชื่อม · จะเข้าร่วมเซิร์ฟเวอร์ Discord ของ iExcellence เพื่อรับ DM"}</small>
+            <small>{discord ? t.discordLinked(discord.username ?? discord.discordUserId) : t.discordNotLinked}</small>
           </span>
           {discord ? (
             <form action={unlinkChannel.bind(null, slug, "discord")}>
-              <ConfirmButton className="btn tiny" message="ยกเลิกการรับแจ้งเตือนทาง Discord?">
-                ยกเลิก
+              <ConfirmButton className="btn tiny" message={t.unlinkConfirm("Discord")}>
+                {t.unlink}
               </ConfirmButton>
             </form>
           ) : (
             <a className="btn tiny primary" href={`/api/discord/connect?org=${encodeURIComponent(slug)}`}>
-              เชื่อม Discord
+              {t.connectDiscord}
             </a>
           )}
         </div>

@@ -2,14 +2,25 @@ import type { AppLink, News, Service } from "@prisma/client";
 import { cache } from "react";
 import { db } from "@/lib/db";
 import type { Member } from "@/lib/context";
+import { defineText, formatDate, formatDateTime, withLocale, type Locale } from "@/i18n";
+import { getLocale } from "@/i18n/server";
 
-export const CHANNELS: Record<string, string> = {
-  company: "ประกาศบริษัท",
-  hr: "ฝ่ายบุคคล",
-  it: "ฝ่าย IT",
-  events: "กิจกรรม",
-  production: "ฝ่ายผลิต",
-};
+/** News channels: key → name in each language. The keys are what a post stores. */
+const CHANNEL_NAMES = defineText<Record<string, string>>({
+  th: { company: "ประกาศบริษัท", hr: "ฝ่ายบุคคล", it: "ฝ่าย IT", events: "กิจกรรม", production: "ฝ่ายผลิต" },
+  en: { company: "Company", hr: "HR", it: "IT", events: "Events", production: "Production" },
+});
+
+export const CHANNELS = CHANNEL_NAMES.th;
+
+export function channelNames(locale: Locale) {
+  return CHANNEL_NAMES[locale];
+}
+
+const TEXT = defineText({
+  th: { hrDesc: "ลงเวลา · ลา · เงินเดือน", taskDesc: "งานของฉัน · อนุมัติ · Project", personal: "ลิงก์ส่วนตัว" },
+  en: { hrDesc: "Time · leave · payroll", taskDesc: "My work · approvals · projects", personal: "Personal link" },
+});
 
 /** The company's departments (key → name), once per request. */
 export const getDepartments = cache(async (orgId: string): Promise<Record<string, string>> => {
@@ -17,8 +28,8 @@ export const getDepartments = cache(async (orgId: string): Promise<Record<string
   return Object.fromEntries(rows.map((d) => [d.key, d.name]));
 });
 
-export function channelLabel(channel: string) {
-  return CHANNELS[channel] ?? channel;
+export function channelLabel(channel: string, locale: Locale) {
+  return CHANNEL_NAMES[locale][channel] ?? channel;
 }
 
 /** "2026-11-09T14:30" as Bangkok time (a datetime-local value): null when blank, undefined when invalid. */
@@ -35,10 +46,6 @@ export function toBangkokInput(d: Date | null | undefined) {
   return d ? new Date(d.getTime() + 7 * 3_600_000).toISOString().slice(0, 16) : "";
 }
 
-export function formatThaiDateTime(d: Date) {
-  return new Intl.DateTimeFormat("th-TH", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" }).format(d);
-}
-
 /**
  * A date string from Task or HR. HR's MySQL DATETIME arrives without a zone and is Thai time, so a date-time
  * without one is read as +07:00 (the server itself may run in UTC). Null when missing or unparsable.
@@ -50,15 +57,11 @@ export function parseApiDate(s: string | null | undefined) {
 }
 
 /** A due date with its time, or the date alone when it has no time of day (a bare date, or midnight Thai time). */
-export function formatDue(s: string) {
+export function formatDue(s: string, locale: Locale) {
   const d = parseApiDate(s);
   if (!d) return s;
   const time = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "Asia/Bangkok" }).format(d);
-  return /T\d{2}:\d{2}/.test(s) && time !== "00:00" ? `${formatThaiDateTime(d)} น.` : formatThaiDate(d);
-}
-
-export function formatThaiDate(d: Date) {
-  return new Intl.DateTimeFormat("th-TH", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Bangkok" }).format(d);
+  return /T\d{2}:\d{2}/.test(s) && time !== "00:00" ? formatDateTime(d, locale) : formatDate(d, locale);
 }
 
 /** HTTPS-only (plus http://localhost outside production, for local HR/Task), and returns the normalized href or null. */
@@ -137,6 +140,9 @@ export async function getVisibleServices(member: Member) {
 /** Everything this member may launch: connected systems, company services, company links and their own personal links. */
 export async function getQuickEntries(member: Member): Promise<QuickEntry[]> {
   const { org } = member;
+  const locale = await getLocale();
+  const t = TEXT[locale];
+  const base = withLocale(locale, `/${org.slug}`);
   const [links, services] = await Promise.all([
     db.appLink.findMany({
       where: {
@@ -149,35 +155,35 @@ export async function getQuickEntries(member: Member): Promise<QuickEntry[]> {
   ]);
   const entries: QuickEntry[] = [];
   if (org.hrEnabled && org.hrBaseUrl) {
-    entries.push({ key: "sys:hr", kind: "hr", name: "HR Excellence", desc: "ลงเวลา · ลา · เงินเดือน", url: `/${org.slug}/go/hr`, icon: "hr" });
+    entries.push({ key: "sys:hr", kind: "hr", name: "HR Excellence", desc: t.hrDesc, url: `${base}/go/hr`, icon: "hr" });
   }
   if (org.taskEnabled) {
     // Through the Portal so the user is signed in to Task automatically.
-    entries.push({ key: "sys:task", kind: "task", name: "TaskExcellence", desc: "งานของฉัน · อนุมัติ · Project", url: `/${org.slug}/go/task`, icon: "task" });
+    entries.push({ key: "sys:task", kind: "task", name: "TaskExcellence", desc: t.taskDesc, url: `${base}/go/task`, icon: "task" });
   }
-  for (const s of services) entries.push(serviceEntry(org.slug, s));
-  for (const l of links) entries.push(linkEntry(l));
+  for (const s of services) entries.push(serviceEntry(base, s));
+  for (const l of links) entries.push(linkEntry(l, t.personal));
   return entries;
 }
 
-function serviceEntry(slug: string, s: Service): QuickEntry {
+function serviceEntry(base: string, s: Service): QuickEntry {
   return {
     key: `svc:${s.id}`,
     kind: "service",
     name: s.name,
     desc: s.description || s.taskLabel,
-    url: `/${slug}/go/service/${s.id}`,
+    url: `${base}/go/service/${s.id}`,
     icon: s.icon,
   };
 }
 
-function linkEntry(l: AppLink): QuickEntry {
+function linkEntry(l: AppLink, personalLabel: string): QuickEntry {
   const personal = l.visibility === "PERSONAL";
   return {
     key: `app:${l.id}`,
     kind: personal ? "personal" : "company",
     name: l.name,
-    desc: personal ? "ลิงก์ส่วนตัว" : l.url,
+    desc: personal ? personalLabel : l.url,
     url: l.url,
     icon: personal ? "personal" : "company",
     linkId: l.id,
@@ -199,14 +205,14 @@ export function pinnedEntries(member: Member, entries: QuickEntry[]) {
 
 export type NewsItem = Pick<News, "id" | "title" | "body" | "channel" | "requiresAck"> & { date: string; acked: boolean; edited: boolean; hasFiles: boolean };
 
-export function toNewsItem(n: News & { _count: { attachments: number } }, acked: Set<string>): NewsItem {
+export function toNewsItem(n: News & { _count: { attachments: number } }, acked: Set<string>, locale: Locale): NewsItem {
   return {
     id: n.id,
     title: n.title,
     body: n.body,
     channel: n.channel,
     requiresAck: n.requiresAck,
-    date: formatThaiDate(n.editedAt ?? n.publishedAt),
+    date: formatDate(n.editedAt ?? n.publishedAt, locale),
     acked: acked.has(n.id),
     edited: n.editedAt !== null,
     hasFiles: n._count.attachments > 0,

@@ -4,26 +4,135 @@ import { AppIcon } from "@/components/AppIcon";
 import { Suspense } from "react";
 import { NewsPanel } from "@/components/NewsPanel";
 import { orgPath, requireMember, type Member } from "@/lib/context";
-import { CHANNELS, formatDue, formatThaiDate, formatThaiDateTime, getQuickEntries, parseApiDate, getVisibleNews, pinnedEntries, toNewsItem } from "@/lib/portal";
+import { channelNames, formatDue, getQuickEntries, parseApiDate, getVisibleNews, pinnedEntries, toNewsItem } from "@/lib/portal";
 import { getHrApprovals, getHrSnapshot, hrDbCaptions } from "@/lib/hr-work";
 import { getMyWork, isOverdue, taskDeepLink, workCounts, type MyWork } from "@/lib/task";
 import type { HrApproval } from "@/lib/hr";
+import { defineText, formatDate, formatDateTime, withLocale, type Locale } from "@/i18n";
+import { getLocale } from "@/i18n/server";
 
-function todayThai() {
-  return new Intl.DateTimeFormat("th-TH", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Bangkok" }).format(new Date());
+const TEXT = defineText({
+  th: {
+    morning: "สวัสดีตอนเช้า",
+    afternoon: "สวัสดีตอนบ่าย",
+    evening: "สวัสดีตอนเย็น",
+    pinnedLabel: "ทางลัดที่ปักหมุด",
+    shortcuts: "ทางลัด",
+    manageShortcuts: "จัดการทางลัด",
+    noPins: "ยังไม่ปักหมุดบริการ · เลือกจากทางลัดได้",
+    hrDesc: "ลงเวลา ขอลา และสลิปเงินเดือน",
+    taskDesc: "งาน แบบฟอร์ม Workflow และการอนุมัติ",
+    myServices: "บริการของฉัน",
+    servicesLead: "เปิดระบบของบริษัทในแท็บใหม่ · ระบบที่ยังไม่ใช้ SSO อาจต้องเข้าสู่ระบบอีกครั้ง",
+    connectApps: "เชื่อมต่อโปรแกรม",
+    connected: "เชื่อมต่อแล้ว",
+    notConnected: "ยังไม่เชื่อม",
+    ready: "พร้อมใช้",
+    notSetUp: "ยังไม่ได้ตั้งค่า",
+    askAdmin: "ติดต่อ Admin",
+    open: "เปิด",
+    setUp: "ตั้งค่า",
+    companyService: "บริการบริษัท",
+    links: (n: number) => `${n} ลิงก์`,
+    appsDesc: "เว็บไซต์ ERP และระบบภายนอกที่บริษัทเพิ่มไว้",
+    myHr: "ข้อมูล HR ของฉัน",
+    hrLinkLead: "เชื่อมบัญชี HR ครั้งเดียว เพื่อดูวันลาคงเหลือและสลิปล่าสุดที่นี่",
+    linkHr: "เชื่อมบัญชี HR",
+    leaveLeft: (used: string, quota: string) => `คงเหลือ · ใช้ไป ${used} จาก ${quota} วัน`,
+    lastSlip: "สลิปเงินเดือนล่าสุด",
+    openInHr: "เปิดใน HR",
+    untitled: "(ไม่มีชื่อ)",
+    due: (d: string) => `กำหนด ${d}`,
+    leave: "ลางาน",
+    step: (s: string) => `Task · ขั้นตอน: ${s}`,
+    sent: (d: string) => `ส่งเมื่อ ${d}`,
+    more: "ดูเพิ่มเติม",
+    myTasks: "งานของฉัน",
+    overdue: "งานเกินกำหนด",
+    approvals: "งานรออนุมัติ",
+    todo: "สิ่งที่ต้องดำเนินการ",
+    unreachable: "ติดต่อ TaskExcellence / HR ไม่ได้ในขณะนี้",
+    todoLead: "งานและคำขอที่รอคุณอยู่ · กดเพื่อดูรายการและเปิดงานได้ทันที",
+    seeAll: "ดูทั้งหมด",
+    approvalSources: "HR ลา/OT · Task Workflow",
+    assignedToMe: "มอบหมายให้ฉัน",
+    latestOverdue: "งานเกินกำหนดล่าสุด",
+    latestApprovals: "รออนุมัติล่าสุด",
+    noApprovals: "ไม่มีงานรออนุมัติ",
+    noOverdue: "ไม่มีงานเกินกำหนด",
+    taskUnreachable: "ติดต่อ TaskExcellence ไม่ได้",
+  },
+  en: {
+    morning: "Good morning",
+    afternoon: "Good afternoon",
+    evening: "Good evening",
+    pinnedLabel: "Pinned shortcuts",
+    shortcuts: "Shortcuts",
+    manageShortcuts: "Manage shortcuts",
+    noPins: "Nothing pinned yet · pick from Shortcuts",
+    hrDesc: "Time attendance, leave requests and payslips",
+    taskDesc: "Tasks, forms, workflows and approvals",
+    myServices: "My services",
+    servicesLead: "Opens company systems in a new tab · systems without SSO may ask you to sign in again",
+    connectApps: "Connect apps",
+    connected: "Connected",
+    notConnected: "Not connected",
+    ready: "Ready",
+    notSetUp: "Not set up",
+    askAdmin: "Ask your Admin",
+    open: "Open",
+    setUp: "Set up",
+    companyService: "Company service",
+    links: (n: number) => `${n} link${n === 1 ? "" : "s"}`,
+    appsDesc: "Websites, ERP and other systems your company added",
+    myHr: "My HR",
+    hrLinkLead: "Link your HR account once to see your leave balance and latest payslip here",
+    linkHr: "Link HR account",
+    leaveLeft: (used: string, quota: string) => `left · used ${used} of ${quota} days`,
+    lastSlip: "Latest payslip",
+    openInHr: "Open in HR",
+    untitled: "(untitled)",
+    due: (d: string) => `Due ${d}`,
+    leave: "Leave",
+    step: (s: string) => `Task · step: ${s}`,
+    sent: (d: string) => `Sent ${d}`,
+    more: "See more",
+    myTasks: "My tasks",
+    overdue: "Overdue",
+    approvals: "Waiting for approval",
+    todo: "To do",
+    unreachable: "Can't reach TaskExcellence / HR right now",
+    todoLead: "Work and requests waiting for you · open a list to act on them",
+    seeAll: "See all",
+    approvalSources: "HR leave/OT · Task workflow",
+    assignedToMe: "Assigned to me",
+    latestOverdue: "Latest overdue",
+    latestApprovals: "Latest approvals",
+    noApprovals: "Nothing waiting for approval",
+    noOverdue: "Nothing overdue",
+    taskUnreachable: "Can't reach TaskExcellence",
+  },
+});
+
+type T = (typeof TEXT)["th"];
+
+function today(locale: Locale) {
+  return new Intl.DateTimeFormat(locale === "th" ? "th-TH" : "en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Bangkok" }).format(new Date());
 }
 
-function greeting() {
+function greeting(t: T) {
   const hour = Number(new Intl.DateTimeFormat("en-GB", { hour: "numeric", hour12: false, timeZone: "Asia/Bangkok" }).format(new Date()));
-  if (hour < 12) return "สวัสดีตอนเช้า";
-  if (hour < 17) return "สวัสดีตอนบ่าย";
-  return "สวัสดีตอนเย็น";
+  if (hour < 12) return t.morning;
+  if (hour < 17) return t.afternoon;
+  return t.evening;
 }
 
 export default async function HomePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const member = await requireMember(slug);
-  const base = orgPath(slug);
+  const locale = await getLocale();
+  const t = TEXT[locale];
+  const base = withLocale(locale, orgPath(slug));
   const { org } = member;
   const [{ news, acked }, entries] = await Promise.all([getVisibleNews(member), getQuickEntries(member)]);
   const pinned = pinnedEntries(member, entries);
@@ -33,14 +142,14 @@ export default async function HomePage({ params }: { params: Promise<{ slug: str
   const services = [
     {
       name: "HR Excellence",
-      desc: "ลงเวลา ขอลา และสลิปเงินเดือน",
+      desc: t.hrDesc,
       icon: "hr",
       style: "orange",
       url: org.hrEnabled && org.hrBaseUrl ? `${base}/go/hr` : null,
     },
     {
       name: "TaskExcellence",
-      desc: "งาน แบบฟอร์ม Workflow และการอนุมัติ",
+      desc: t.taskDesc,
       icon: "task",
       style: "blue",
       url: org.taskEnabled ? `${base}/go/task` : null,
@@ -50,18 +159,18 @@ export default async function HomePage({ params }: { params: Promise<{ slug: str
   return (
     <>
       <div className="intro">
-        <span className="eyebrow">{todayThai()}</span>
+        <span className="eyebrow">{today(locale)}</span>
         <h2>
-          {greeting()}
+          {greeting(t)}
           {member.user.name ? `, ${member.user.name}` : ""}
         </h2>
       </div>
 
-      <section className="quickrail" aria-label="ทางลัดที่ปักหมุด">
+      <section className="quickrail" aria-label={t.pinnedLabel}>
         <div className="sec-header">
-          <h3>ทางลัด</h3>
-          <Link href={`${base}/launcher`} className="inline-link" title="จัดการทางลัด">
-            จัดการทางลัด <ChevronRight size={14} aria-hidden="true" />
+          <h3>{t.shortcuts}</h3>
+          <Link href={`${base}/launcher`} className="inline-link" title={t.manageShortcuts}>
+            {t.manageShortcuts} <ChevronRight size={14} aria-hidden="true" />
           </Link>
         </div>
         <div className="quick-items">
@@ -73,34 +182,34 @@ export default async function HomePage({ params }: { params: Promise<{ slug: str
               </a>
             ))
           ) : (
-            <span className="quickempty">ยังไม่ปักหมุดบริการ · เลือกจากทางลัดได้</span>
+            <span className="quickempty">{t.noPins}</span>
           )}
         </div>
       </section>
 
       {(org.taskEnabled || org.hrEnabled) && (
-        <Suspense fallback={<WorkDashboard base={base} />}>
-          <MyWorkDashboard member={member} base={base} />
+        <Suspense fallback={<WorkDashboard base={base} t={t} />}>
+          <MyWorkDashboard member={member} base={base} locale={locale} />
         </Suspense>
       )}
 
       {org.hrEnabled && (
         <Suspense fallback={null}>
-          <HrPanel member={member} base={base} />
+          <HrPanel member={member} base={base} locale={locale} />
         </Suspense>
       )}
 
-      <NewsPanel items={news.map((n) => toNewsItem(n, acked))} channels={CHANNELS} base={base} />
+      <NewsPanel items={news.map((n) => toNewsItem(n, acked, locale))} channels={channelNames(locale)} base={base} />
 
       <section className="anchorzone" id="services">
         <div className="sec-header">
           <div>
-            <h3>บริการของฉัน</h3>
-            <p>เปิดระบบของบริษัทในแท็บใหม่ · ระบบที่ยังไม่ใช้ SSO อาจต้องเข้าสู่ระบบอีกครั้ง</p>
+            <h3>{t.myServices}</h3>
+            <p>{t.servicesLead}</p>
           </div>
           {member.role === "ADMIN" && (
             <Link href={`${base}/admin?tab=connections`} className="btn tiny">
-              <Settings size={14} strokeWidth={1.75} aria-hidden="true" /> เชื่อมต่อโปรแกรม
+              <Settings size={14} strokeWidth={1.75} aria-hidden="true" /> {t.connectApps}
             </Link>
           )}
         </div>
@@ -109,7 +218,7 @@ export default async function HomePage({ params }: { params: Promise<{ slug: str
             <article key={s.name} className="service card">
               <div className="topline">
                 <div className={`serviceicon ${s.style}`}><AppIcon name={s.icon} /></div>
-                <span className={`chip ${s.url ? "" : "gray"}`}>{s.url ? "เชื่อมต่อแล้ว" : "ยังไม่เชื่อม"}</span>
+                <span className={`chip ${s.url ? "" : "gray"}`}>{s.url ? t.connected : t.notConnected}</span>
               </div>
               <div>
                 <h4>{s.name}</h4>
@@ -117,16 +226,16 @@ export default async function HomePage({ params }: { params: Promise<{ slug: str
               </div>
               <div className="servicebottom">
                 <span className={`quiet ${s.url ? "svcactive" : ""}`}>
-                  {s.url ? "พร้อมใช้" : member.role === "ADMIN" ? "ยังไม่ได้ตั้งค่า" : "ติดต่อ Admin"}
+                  {s.url ? t.ready : member.role === "ADMIN" ? t.notSetUp : t.askAdmin}
                 </span>
                 {s.url ? (
                   <a className="btn tiny light" href={s.url} target="_blank" rel="noopener noreferrer">
-                    เปิด <ArrowUpRight size={14} aria-hidden="true" />
+                    {t.open} <ArrowUpRight size={14} aria-hidden="true" />
                   </a>
                 ) : (
                   member.role === "ADMIN" && (
                     <Link className="btn tiny light" href={`${base}/admin?tab=connections`}>
-                      ตั้งค่า <ChevronRight size={14} aria-hidden="true" />
+                      {t.setUp} <ChevronRight size={14} aria-hidden="true" />
                     </Link>
                   )
                 )}
@@ -137,16 +246,16 @@ export default async function HomePage({ params }: { params: Promise<{ slug: str
             <article key={s.key} className="service card">
               <div className="topline">
                 <div className="serviceicon"><AppIcon name={s.icon} /></div>
-                <span className="chip">บริการบริษัท</span>
+                <span className="chip">{t.companyService}</span>
               </div>
               <div>
                 <h4>{s.name}</h4>
                 <p>{s.desc}</p>
               </div>
               <div className="servicebottom">
-                <span className="quiet svcactive">พร้อมใช้</span>
+                <span className="quiet svcactive">{t.ready}</span>
                 <a className="btn tiny light" href={s.url} target="_blank" rel="noopener noreferrer">
-                  เปิด <ArrowUpRight size={14} aria-hidden="true" />
+                  {t.open} <ArrowUpRight size={14} aria-hidden="true" />
                 </a>
               </div>
             </article>
@@ -154,16 +263,16 @@ export default async function HomePage({ params }: { params: Promise<{ slug: str
           <article className="service card">
             <div className="topline">
               <div className="serviceicon violet"><AppIcon name="apps" /></div>
-              <span className="chip">{companyLinks} ลิงก์</span>
+              <span className="chip">{t.links(companyLinks)}</span>
             </div>
             <div>
               <h4>Company Apps</h4>
-              <p>เว็บไซต์ ERP และระบบภายนอกที่บริษัทเพิ่มไว้</p>
+              <p>{t.appsDesc}</p>
             </div>
             <div className="servicebottom">
-              <span className="quiet svcactive">พร้อมใช้</span>
+              <span className="quiet svcactive">{t.ready}</span>
               <Link className="btn tiny light" href={`${base}/launcher`}>
-                เปิด <ArrowUpRight size={14} aria-hidden="true" />
+                {t.open} <ArrowUpRight size={14} aria-hidden="true" />
               </Link>
             </div>
           </article>
@@ -176,19 +285,20 @@ export default async function HomePage({ params }: { params: Promise<{ slug: str
 const days = (n: number) => String(Number(n.toFixed(2)));
 
 /** The member's own leave balance and latest payslip period from HR. Amounts stay in HR. */
-async function HrPanel({ member, base }: { member: Member; base: string }) {
+async function HrPanel({ member, base, locale }: { member: Member; base: string; locale: Locale }) {
+  const t = TEXT[locale];
   const snapshot = await getHrSnapshot(member);
   if (!snapshot) return null;
   if (!snapshot.linked) {
     return (
-      <section className="card panel hrpanel" aria-label="ข้อมูล HR ของฉัน">
+      <section className="card panel hrpanel" aria-label={t.myHr}>
         <div className="sec-header" style={{ margin: 0 }}>
           <div>
-            <h3>ข้อมูล HR ของฉัน</h3>
-            <p>เชื่อมบัญชี HR ครั้งเดียว เพื่อดูวันลาคงเหลือและสลิปล่าสุดที่นี่</p>
+            <h3>{t.myHr}</h3>
+            <p>{t.hrLinkLead}</p>
           </div>
           <Link href={`${base}/hr-link`} className="btn tiny">
-            เชื่อมบัญชี HR <ChevronRight size={14} aria-hidden="true" />
+            {t.linkHr} <ChevronRight size={14} aria-hidden="true" />
           </Link>
         </div>
       </section>
@@ -198,9 +308,9 @@ async function HrPanel({ member, base }: { member: Member; base: string }) {
   const captions = snapshot.accounts.length > 1 && member.org.hrBaseUrl ? await hrDbCaptions(member.org.hrBaseUrl) : null;
 
   return (
-    <section className="card panel hrpanel" aria-label="ข้อมูล HR ของฉัน">
+    <section className="card panel hrpanel" aria-label={t.myHr}>
       <div className="sec-header">
-        <h3>ข้อมูล HR ของฉัน</h3>
+        <h3>{t.myHr}</h3>
       </div>
       {snapshot.accounts.map((a) => (
         <div key={a.db}>
@@ -210,17 +320,17 @@ async function HrPanel({ member, base }: { member: Member; base: string }) {
               <div key={l.name} className="hrstat">
                 <span>{l.name}</span>
                 <b>{days(Math.max(0, l.quota - l.used))}</b>
-                <small>คงเหลือ · ใช้ไป {days(l.used)} จาก {days(l.quota)} วัน</small>
+                <small>{t.leaveLeft(days(l.used), days(l.quota))}</small>
               </div>
             ))}
             {a.lastSlip && (
               <a className="hrstat slip" href={`${base}/go/hr?${new URLSearchParams({ to: "payslip", db: a.db })}`} target="_blank" rel="noopener noreferrer">
-                <span>สลิปเงินเดือนล่าสุด</span>
+                <span>{t.lastSlip}</span>
                 <strong>
-                  {formatThaiDate(new Date(a.lastSlip.start))} – {formatThaiDate(new Date(a.lastSlip.end))}
+                  {formatDate(new Date(a.lastSlip.start), locale)} – {formatDate(new Date(a.lastSlip.end), locale)}
                 </strong>
                 <small>
-                  เปิดใน HR <ArrowUpRight size={13} aria-hidden="true" />
+                  {t.openInHr} <ArrowUpRight size={13} aria-hidden="true" />
                 </small>
               </a>
             )}
@@ -240,37 +350,39 @@ function timeOf(s: string | null) {
 }
 
 /** The 3 tasks that went overdue most recently (latest due date first). */
-function overduePreview(slug: string, work: MyWork): WorkPreview[] {
+function overduePreview(slug: string, work: MyWork, locale: Locale): WorkPreview[] {
+  const t = TEXT[locale];
   return work.tasks
-    .filter((t) => isOverdue(t))
+    .filter((task) => isOverdue(task))
     .sort((a, b) => timeOf(b.dueDate) - timeOf(a.dueDate))
     .slice(0, 3)
-    .map((t) => ({
-      key: t.taskId,
-      href: taskDeepLink(slug, t),
-      title: t.title || "(ไม่มีชื่อ)",
-      sub: `${t.workspaceName} › ${t.projectName}`,
-      when: t.dueDate ? `กำหนด ${formatDue(t.dueDate)}` : null,
+    .map((task) => ({
+      key: task.taskId,
+      href: taskDeepLink(slug, task),
+      title: task.title || t.untitled,
+      sub: `${task.workspaceName} › ${task.projectName}`,
+      when: task.dueDate ? t.due(formatDue(task.dueDate, locale)) : null,
       late: true,
     }));
 }
 
 /** The 3 newest approval requests, HR leave/OT and Task workflow together (newest submission first). */
-function approvalsPreview(slug: string, work: MyWork | null, hr: HrApproval[] | null): WorkPreview[] {
+function approvalsPreview(slug: string, base: string, work: MyWork | null, hr: HrApproval[] | null, locale: Locale): WorkPreview[] {
+  const t = TEXT[locale];
   const items = [
     ...(hr ?? []).map((a) => ({
       at: a.requestedAt,
       key: `hr:${a.db}:${a.type}:${a.requestId}`,
-      href: `${orgPath(slug, "/go/hr")}?${new URLSearchParams({ to: a.type === "AS" ? "approve-leave" : "approve-ot", db: a.db })}`,
-      title: `${a.type === "AS" ? "ลางาน" : "OT"} · ${a.employeeName || "-"}`,
+      href: `${base}/go/hr?${new URLSearchParams({ to: a.type === "AS" ? "approve-leave" : "approve-ot", db: a.db })}`,
+      title: `${a.type === "AS" ? t.leave : "OT"} · ${a.employeeName || "-"}`,
       sub: `HR · ${a.kind}`,
     })),
     ...(work?.approvals ?? []).map((a) => ({
       at: a.submittedAt,
       key: `task:${a.taskId}:${a.stepName}`,
       href: taskDeepLink(slug, a),
-      title: a.title || "(ไม่มีชื่อ)",
-      sub: `Task · ขั้นตอน: ${a.stepName}`,
+      title: a.title || t.untitled,
+      sub: t.step(a.stepName),
     })),
   ];
   return items
@@ -278,17 +390,17 @@ function approvalsPreview(slug: string, work: MyWork | null, hr: HrApproval[] | 
     .slice(0, 3)
     .map(({ at, ...p }) => {
       const sent = parseApiDate(at);
-      return { ...p, when: sent ? `ส่งเมื่อ ${formatThaiDateTime(sent)} น.` : null };
+      return { ...p, when: sent ? t.sent(formatDateTime(sent, locale)) : null };
     });
 }
 
-function PreviewList({ title, items, total, href, empty }: { title: string; items: WorkPreview[]; total: number; href: string; empty: string }) {
+function PreviewList({ title, items, total, href, empty, t }: { title: string; items: WorkPreview[]; total: number; href: string; empty: string; t: T }) {
   return (
     <div className="wpreview">
       <div className="wpreview-head">
         <b>{title}</b>
         <Link href={href} className="inline-link">
-          ดูเพิ่มเติม{total > items.length ? ` (${total})` : ""} <ChevronRight size={14} aria-hidden="true" />
+          {t.more}{total > items.length ? ` (${total})` : ""} <ChevronRight size={14} aria-hidden="true" />
         </Link>
       </div>
       {items.length === 0 ? (
@@ -309,34 +421,36 @@ function PreviewList({ title, items, total, href, empty }: { title: string; item
 }
 
 /**
- * "สิ่งที่ต้องดำเนินการ": counts from Task/HR; each opens My Work on that list, and the latest 3 overdue tasks and
+ * "To do": counts from Task/HR; each opens My Work on that list, and the latest 3 overdue tasks and
  * approval requests are listed under them. Without counts it's the loading state.
  */
 function WorkDashboard({
   base,
+  t,
   counts,
   previews,
   failed,
 }: {
   base: string;
+  t: T;
   counts?: { open: number; overdue: number; approvals: number };
   previews?: WorkPreviews;
   failed?: boolean;
 }) {
   const items = [
-    { tab: "tasks", label: "งานของฉัน", n: counts?.open, warn: false },
-    { tab: "overdue", label: "งานเกินกำหนด", n: counts?.overdue, warn: true },
-    { tab: "approvals", label: "งานรออนุมัติ", n: counts?.approvals, warn: false },
+    { tab: "tasks", label: t.myTasks, n: counts?.open, warn: false },
+    { tab: "overdue", label: t.overdue, n: counts?.overdue, warn: true },
+    { tab: "approvals", label: t.approvals, n: counts?.approvals, warn: false },
   ];
   return (
-    <section className="card panel" aria-label="สิ่งที่ต้องดำเนินการ" style={{ marginBottom: 16 }}>
+    <section className="card panel" aria-label={t.todo} style={{ marginBottom: 16 }}>
       <div className="sec-header">
         <div>
-          <h3>สิ่งที่ต้องดำเนินการ</h3>
-          <p>{failed ? "ติดต่อ TaskExcellence / HR ไม่ได้ในขณะนี้" : "งานและคำขอที่รอคุณอยู่ · กดเพื่อดูรายการและเปิดงานได้ทันที"}</p>
+          <h3>{t.todo}</h3>
+          <p>{failed ? t.unreachable : t.todoLead}</p>
         </div>
         <Link href={`${base}/my-work`} className="btn tiny">
-          ดูทั้งหมด <ChevronRight size={14} aria-hidden="true" />
+          {t.seeAll} <ChevronRight size={14} aria-hidden="true" />
         </Link>
       </div>
       <div className="workstats">
@@ -344,7 +458,7 @@ function WorkDashboard({
           <Link key={i.tab} href={`${base}/my-work?tab=${i.tab}`} className={`workstat ${i.warn && i.n ? "warn" : ""}`}>
             <span>
               {i.label}
-              <small>{i.tab === "approvals" ? "HR ลา/OT · Task Workflow" : "มอบหมายให้ฉัน"}</small>
+              <small>{i.tab === "approvals" ? t.approvalSources : t.assignedToMe}</small>
             </span>
             <b>{i.n ?? (failed ? "–" : "…")}</b>
           </Link>
@@ -352,24 +466,25 @@ function WorkDashboard({
       </div>
       {previews && counts && (
         <div className="workpreviews">
-          <PreviewList title="งานเกินกำหนดล่าสุด" items={previews.overdue} total={counts.overdue} href={`${base}/my-work?tab=overdue`} empty={previews.overdueNote} />
-          <PreviewList title="รออนุมัติล่าสุด" items={previews.approvals} total={counts.approvals} href={`${base}/my-work?tab=approvals`} empty="ไม่มีงานรออนุมัติ" />
+          <PreviewList title={t.latestOverdue} items={previews.overdue} total={counts.overdue} href={`${base}/my-work?tab=overdue`} empty={previews.overdueNote} t={t} />
+          <PreviewList title={t.latestApprovals} items={previews.approvals} total={counts.approvals} href={`${base}/my-work?tab=approvals`} empty={t.noApprovals} t={t} />
         </div>
       )}
     </section>
   );
 }
 
-async function MyWorkDashboard({ member, base }: { member: Member; base: string }) {
+async function MyWorkDashboard({ member, base, locale }: { member: Member; base: string; locale: Locale }) {
+  const t = TEXT[locale];
   const [work, hr] = await Promise.all([getMyWork(member), getHrApprovals(member)]);
-  if (!work && !hr) return member.org.taskEnabled ? <WorkDashboard base={base} failed /> : null;
+  if (!work && !hr) return member.org.taskEnabled ? <WorkDashboard base={base} t={t} failed /> : null;
   const counts = workCounts(work ?? { tasks: [], approvals: [] });
   counts.approvals += hr?.length ?? 0;
   const slug = member.org.slug;
   const previews: WorkPreviews = {
-    overdue: work ? overduePreview(slug, work) : [],
-    overdueNote: work ? "ไม่มีงานเกินกำหนด" : "ติดต่อ TaskExcellence ไม่ได้",
-    approvals: approvalsPreview(slug, work, hr),
+    overdue: work ? overduePreview(slug, work, locale) : [],
+    overdueNote: work ? t.noOverdue : t.taskUnreachable,
+    approvals: approvalsPreview(slug, base, work, hr, locale),
   };
-  return <WorkDashboard base={base} counts={counts} previews={previews} />;
+  return <WorkDashboard base={base} t={t} counts={counts} previews={previews} />;
 }

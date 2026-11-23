@@ -6,4 +6,8 @@ declare module "next-auth" {
     /** Set while a superadmin acts as another user: the superadmin's own id. */
     realUserId?: string;
   }
+  interface User {
+    /** Credentials sign-in only: the "remember me" checkbox. */
+    remember?: boolean;
+  }
 }

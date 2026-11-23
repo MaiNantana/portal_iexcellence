@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { AuthScreen } from "@/components/AuthScreen";
 import { orgPath, safeNext } from "@/lib/context";
 import { db } from "@/lib/db";
+import { localePath } from "@/i18n/server";
 
 export default async function OrgPasswordPage({
   params,
@@ -14,6 +15,6 @@ export default async function OrgPasswordPage({
   const { next: rawNext } = await searchParams;
   const org = await db.org.findUnique({ where: { slug }, select: { name: true } });
   if (!org) notFound();
-  const next = rawNext ? safeNext(rawNext) : orgPath(slug);
+  const next = rawNext ? safeNext(rawNext) : await localePath(orgPath(slug));
   return <AuthScreen mode="password" next={next} loginBase={orgPath(slug, "/login")} orgName={org.name} />;
 }

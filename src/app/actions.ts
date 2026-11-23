@@ -16,8 +16,79 @@ import { sendMail } from "@/lib/mail";
 import { readNewsUploads } from "@/lib/news-files";
 import { CHANNELS, getDepartments, getQuickEntries, newsWhere, parseBangkokInput, pinnedEntries, safeHttpsUrl, SERVICE_ICONS } from "@/lib/portal";
 import { getTaskProjects } from "@/lib/task";
+import { defineText, withLocale } from "@/i18n";
+import { getLocale, localePath } from "@/i18n/server";
 
 export type FormState = { error?: string; ok?: string } | undefined;
+
+const TEXT = defineText({
+  th: {
+    badLink: "กรุณากรอกชื่อและ URL แบบ HTTPS ที่ถูกต้อง",
+    adminOnlyLink: "เฉพาะ Admin ที่เพิ่มลิงก์ของบริษัทได้",
+    linkAdded: "เพิ่มลิงก์แล้ว",
+    linkNotFound: "ไม่พบลิงก์ หรือคุณไม่มีสิทธิ์แก้ไข",
+    newsInput: "กรุณากรอกหัวข้อ เนื้อหา และเลือก Channel กับกลุ่มผู้รับให้ถูกต้อง",
+    badDate: "วันเวลาไม่ถูกต้อง",
+    expiryBeforePublish: "วันหมดอายุต้องอยู่หลังวันเผยแพร่",
+    scheduled: "ตั้งเวลาเผยแพร่แล้ว",
+    published: "เผยแพร่ใน Portal แล้ว",
+    newsNotFound: "ไม่พบประกาศนี้ อาจถูกลบไปแล้ว",
+    serviceInput: "กรอกชื่อบริการ และเลือก Project ใน Task",
+    taskUnreachable: "ติดต่อ TaskExcellence ไม่ได้ ลองใหม่อีกครั้ง",
+    projectNotFound: "ไม่พบ Project นี้ใน Task หรือคุณไม่มีสิทธิ์",
+    serviceAdded: "เพิ่มบริการแล้ว",
+    departmentName: "กรุณากรอกชื่อแผนก (ไม่เกิน 60 ตัวอักษร)",
+    departmentTaken: "มีแผนกชื่อนี้แล้ว",
+    departmentAdded: (name: string) => `เพิ่มแผนก ${name} แล้ว`,
+    noEmails: "กรุณากรอกอีเมลอย่างน้อย 1 รายการ",
+    badEmails: (list: string, more: number) => `อีเมลไม่ถูกต้อง: ${list}${more ? ` และอีก ${more} รายการ` : ""}`,
+    tooManyInvites: (max: number) => `เชิญได้ครั้งละไม่เกิน ${max} คน`,
+    departmentNotFound: "ไม่พบแผนกนี้",
+    alreadyMember: "อีเมลนี้เป็นสมาชิกของบริษัทอยู่แล้ว",
+    allMembers: "ทุกอีเมลเป็นสมาชิกของบริษัทอยู่แล้ว",
+    inviteSubject: (org: string) => `คำเชิญเข้าใช้ ${org} Workspace`,
+    inviteBody: (who: string, org: string, url: string) =>
+      `${who} เชิญคุณเข้าใช้ ${org} Workspace\n\nเข้าสู่ระบบด้วย Google / Microsoft ที่ใช้อีเมลนี้ หรือตั้งรหัสผ่านได้ที่ ${url}`,
+    invitedOne: (email: string) => `ส่งคำเชิญถึง ${email} แล้ว`,
+    invitedMany: (n: number) => `เชิญ ${n} คนแล้ว`,
+    skipped: (n: number) => `ข้าม ${n} คนที่เป็นสมาชิกอยู่แล้ว`,
+    mailFailed: (n: number, list: string) => `ส่งอีเมลแจ้งไม่สำเร็จ ${n} คน (${list}) แต่คำเชิญบันทึกแล้ว เข้าสู่ระบบด้วยอีเมลนั้นได้เลย`,
+  },
+  en: {
+    badLink: "Please enter a name and a valid HTTPS URL.",
+    adminOnlyLink: "Only Admins can add company links.",
+    linkAdded: "Link added.",
+    linkNotFound: "Link not found, or you can't edit it.",
+    newsInput: "Please enter a title and body, and choose a channel and audience.",
+    badDate: "The date or time is not valid.",
+    expiryBeforePublish: "The expiry must be after the publish time.",
+    scheduled: "Scheduled.",
+    published: "Published on the Portal.",
+    newsNotFound: "This announcement was not found. It may have been deleted.",
+    serviceInput: "Enter a service name and choose a Task project.",
+    taskUnreachable: "Can't reach TaskExcellence. Please try again.",
+    projectNotFound: "This project was not found in Task, or you don't have access to it.",
+    serviceAdded: "Service added.",
+    departmentName: "Please enter a department name (up to 60 characters).",
+    departmentTaken: "A department with this name already exists.",
+    departmentAdded: (name: string) => `Department ${name} added.`,
+    noEmails: "Please enter at least one email.",
+    badEmails: (list: string, more: number) => `Invalid email: ${list}${more ? ` and ${more} more` : ""}`,
+    tooManyInvites: (max: number) => `You can invite at most ${max} people at a time.`,
+    departmentNotFound: "Department not found.",
+    alreadyMember: "This email is already a member of the company.",
+    allMembers: "Every email is already a member of the company.",
+    inviteSubject: (org: string) => `Invitation to the ${org} Workspace`,
+    inviteBody: (who: string, org: string, url: string) =>
+      `${who} invited you to the ${org} Workspace\n\nSign in with the Google / Microsoft account for this email, or set a password at ${url}`,
+    invitedOne: (email: string) => `Invitation sent to ${email}`,
+    invitedMany: (n: number) => `${n} people invited`,
+    skipped: (n: number) => `skipped ${n} existing member${n === 1 ? "" : "s"}`,
+    mailFailed: (n: number, list: string) => `the email didn't reach ${n} (${list}), but the invitation is saved and they can sign in with that email`,
+  },
+});
+
+const text = async () => TEXT[await getLocale()];
 
 export async function acknowledgeNews(slug: string, newsId: string) {
   const member = await requireMember(slug);
@@ -55,9 +126,10 @@ export async function addLink(_: FormState, form: FormData): Promise<FormState> 
     visibility: form.get("visibility") ?? "PERSONAL",
   });
   const url = safeHttpsUrl(parsed.data?.url);
-  if (!parsed.success || !url) return { error: "กรุณากรอกชื่อและ URL แบบ HTTPS ที่ถูกต้อง" };
+  const t = await text();
+  if (!parsed.success || !url) return { error: t.badLink };
   const company = parsed.data.visibility === "COMPANY";
-  if (company && member.role !== "ADMIN") return { error: "เฉพาะ Admin ที่เพิ่มลิงก์ของบริษัทได้" };
+  if (company && member.role !== "ADMIN") return { error: t.adminOnlyLink };
 
   const link = await db.appLink.create({
     data: { orgId: member.orgId, ownerId: company ? null : member.userId, name: parsed.data.name, url, visibility: parsed.data.visibility },
@@ -67,7 +139,7 @@ export async function addLink(_: FormState, form: FormData): Promise<FormState> 
     await db.membership.update({ where: { id: member.id }, data: { pins: [...current, `app:${link.id}`], pinsCustomized: true } });
   }
   revalidatePath("/", "layout");
-  return { ok: "เพิ่มลิงก์แล้ว" };
+  return { ok: t.linkAdded };
 }
 
 /** Personal links belong to their owner; company links to the tenant's admins. */
@@ -82,13 +154,14 @@ async function findEditableLink(slug: string, id: string) {
 export async function updateLink(_: FormState, form: FormData): Promise<FormState> {
   const slug = slugFrom(form);
   const link = await findEditableLink(slug, String(form.get("id") ?? ""));
-  if (!link) return { error: "ไม่พบลิงก์ หรือคุณไม่มีสิทธิ์แก้ไข" };
+  const t = await text();
+  if (!link) return { error: t.linkNotFound };
   const name = String(form.get("name") ?? "").trim();
   const url = safeHttpsUrl(form.get("url") as string);
-  if (!name || name.length > 60 || !url) return { error: "กรุณากรอกชื่อและ URL แบบ HTTPS ที่ถูกต้อง" };
+  if (!name || name.length > 60 || !url) return { error: t.badLink };
   await db.appLink.update({ where: { id: link.id }, data: { name, url } });
   revalidatePath("/", "layout");
-  redirect(orgPath(slug, "/launcher"));
+  redirect(await localePath(orgPath(slug, "/launcher")));
 }
 
 export async function deleteLink(slug: string, id: string) {
@@ -115,7 +188,6 @@ function parseNews(form: FormData) {
 }
 
 const TX_OPTIONS = { timeout: 60_000 };
-const NEWS_INPUT_ERROR = "กรุณากรอกหัวข้อ เนื้อหา และเลือก Channel กับกลุ่มผู้รับให้ถูกต้อง";
 
 async function validAudience(orgId: string, audience: string) {
   return audience === "all" || audience in (await getDepartments(orgId));
@@ -123,17 +195,19 @@ async function validAudience(orgId: string, audience: string) {
 
 export async function createNews(_: FormState, form: FormData): Promise<FormState> {
   const admin = await requireAdmin(slugFrom(form));
+  const locale = await getLocale();
+  const t = TEXT[locale];
   const parsed = parseNews(form);
-  if (!parsed.success || !(await validAudience(admin.orgId, parsed.data.audience))) return { error: NEWS_INPUT_ERROR };
+  if (!parsed.success || !(await validAudience(admin.orgId, parsed.data.audience))) return { error: t.newsInput };
 
   const publishAt = parseBangkokInput(form.get("publishAt"));
   const expiresAt = parseBangkokInput(form.get("expiresAt"));
-  if (publishAt === undefined || expiresAt === undefined) return { error: "วันเวลาไม่ถูกต้อง" };
+  if (publishAt === undefined || expiresAt === undefined) return { error: t.badDate };
   const now = new Date();
   const publishedAt = publishAt && publishAt > now ? publishAt : now;
-  if (expiresAt && expiresAt <= publishedAt) return { error: "วันหมดอายุต้องอยู่หลังวันเผยแพร่" };
+  if (expiresAt && expiresAt <= publishedAt) return { error: t.expiryBeforePublish };
 
-  const uploads = await readNewsUploads(form, 0);
+  const uploads = await readNewsUploads(form, 0, locale);
   if ("error" in uploads) return uploads;
 
   await db.$transaction(async (tx) => {
@@ -152,7 +226,7 @@ export async function createNews(_: FormState, form: FormData): Promise<FormStat
     for (const file of uploads.files) await tx.newsAttachment.create({ data: { ...file, newsId: news.id } });
   }, TX_OPTIONS);
   revalidatePath("/", "layout");
-  return { ok: publishedAt > now ? "ตั้งเวลาเผยแพร่แล้ว" : "เผยแพร่ใน Portal แล้ว" };
+  return { ok: publishedAt > now ? t.scheduled : t.published };
 }
 
 /** Browsers submit textarea line breaks as CRLF, so compare text with line endings normalized. */
@@ -162,25 +236,27 @@ const sameText = (a: string, b: string) => a.replace(/\r\n/g, "\n") === b.replac
 export async function updateNews(_: FormState, form: FormData): Promise<FormState> {
   const slug = slugFrom(form);
   const admin = await requireAdmin(slug);
+  const locale = await getLocale();
+  const t = TEXT[locale];
   const parsed = parseNews(form);
-  if (!parsed.success || !(await validAudience(admin.orgId, parsed.data.audience))) return { error: NEWS_INPUT_ERROR };
+  if (!parsed.success || !(await validAudience(admin.orgId, parsed.data.audience))) return { error: t.newsInput };
   const news = await db.news.findFirst({
     where: { id: String(form.get("id") ?? ""), orgId: admin.orgId },
     include: { attachments: { select: { id: true } } },
   });
-  if (!news) return { error: "ไม่พบประกาศนี้ อาจถูกลบไปแล้ว" };
+  if (!news) return { error: t.newsNotFound };
 
   const now = new Date();
   const wasLive = news.publishedAt <= now;
   const publishAt = parseBangkokInput(form.get("publishAt"));
   const expiresAt = parseBangkokInput(form.get("expiresAt"));
-  if (publishAt === undefined || expiresAt === undefined) return { error: "วันเวลาไม่ถูกต้อง" };
+  if (publishAt === undefined || expiresAt === undefined) return { error: t.badDate };
   // A live post keeps its publish date (the form doesn't offer it); a scheduled one can move, or go out now when cleared.
   const publishedAt = wasLive ? news.publishedAt : publishAt && publishAt > now ? publishAt : now;
-  if (expiresAt && expiresAt <= publishedAt) return { error: "วันหมดอายุต้องอยู่หลังวันเผยแพร่" };
+  if (expiresAt && expiresAt <= publishedAt) return { error: t.expiryBeforePublish };
 
   const removeIds = form.getAll("removeFile").map(String).filter((id) => news.attachments.some((a) => a.id === id));
-  const uploads = await readNewsUploads(form, news.attachments.length - removeIds.length);
+  const uploads = await readNewsUploads(form, news.attachments.length - removeIds.length, locale);
   if ("error" in uploads) return uploads;
 
   const textChanged = !sameText(news.title, parsed.data.title) || !sameText(news.body, parsed.data.body);
@@ -206,7 +282,7 @@ export async function updateNews(_: FormState, form: FormData): Promise<FormStat
     if (editedLive) await tx.newsAck.deleteMany({ where: { newsId: news.id } });
   }, TX_OPTIONS);
   revalidatePath("/", "layout");
-  redirect(orgPath(slug, "/admin?tab=news"));
+  redirect(await localePath(orgPath(slug, "/admin?tab=news")));
 }
 
 export async function deleteNews(slug: string, id: string) {
@@ -235,13 +311,14 @@ export async function createService(_: FormState, form: FormData): Promise<FormS
     openMode: form.get("openMode"),
     audience: form.get("audience"),
   });
-  if (!parsed.success || !(await validAudience(admin.orgId, parsed.data.audience))) return { error: "กรอกชื่อบริการ และเลือก Project ใน Task" };
+  const t = await text();
+  if (!parsed.success || !(await validAudience(admin.orgId, parsed.data.audience))) return { error: t.serviceInput };
   const [workspaceId, projectId] = parsed.data.project.split("|");
   const workspaces = await getTaskProjects(admin);
-  if (!workspaces) return { error: "ติดต่อ TaskExcellence ไม่ได้ ลองใหม่อีกครั้ง" };
+  if (!workspaces) return { error: t.taskUnreachable };
   const ws = workspaces.find((w) => w.id === workspaceId);
   const project = ws?.projects.find((p) => p.id === projectId);
-  if (!ws || !project) return { error: "ไม่พบ Project นี้ใน Task หรือคุณไม่มีสิทธิ์" };
+  if (!ws || !project) return { error: t.projectNotFound };
   const { name, description, icon, openMode, audience } = parsed.data;
   await db.service.create({
     data: {
@@ -258,7 +335,7 @@ export async function createService(_: FormState, form: FormData): Promise<FormS
     },
   });
   revalidatePath("/", "layout");
-  return { ok: "เพิ่มบริการแล้ว" };
+  return { ok: t.serviceAdded };
 }
 
 export async function deleteService(slug: string, id: string) {
@@ -303,11 +380,12 @@ async function departmentNameTaken(orgId: string, name: string, exceptKey?: stri
 export async function createDepartment(_: FormState, form: FormData): Promise<FormState> {
   const admin = await requireAdmin(slugFrom(form));
   const name = departmentName.safeParse(form.get("name"));
-  if (!name.success) return { error: "กรุณากรอกชื่อแผนก (ไม่เกิน 60 ตัวอักษร)" };
-  if (await departmentNameTaken(admin.orgId, name.data)) return { error: "มีแผนกชื่อนี้แล้ว" };
+  const t = await text();
+  if (!name.success) return { error: t.departmentName };
+  if (await departmentNameTaken(admin.orgId, name.data)) return { error: t.departmentTaken };
   await db.department.create({ data: { orgId: admin.orgId, key: `d${randomBytes(5).toString("hex")}`, name: name.data } });
   revalidatePath("/", "layout");
-  return { ok: `เพิ่มแผนก ${name.data} แล้ว` };
+  return { ok: t.departmentAdded(name.data) };
 }
 
 export async function renameDepartment(_: FormState, form: FormData): Promise<FormState> {
@@ -315,11 +393,12 @@ export async function renameDepartment(_: FormState, form: FormData): Promise<Fo
   const admin = await requireAdmin(slug);
   const key = String(form.get("key") ?? "");
   const name = departmentName.safeParse(form.get("name"));
-  if (!name.success) return { error: "กรุณากรอกชื่อแผนก (ไม่เกิน 60 ตัวอักษร)" };
-  if (await departmentNameTaken(admin.orgId, name.data, key)) return { error: "มีแผนกชื่อนี้แล้ว" };
+  const t = await text();
+  if (!name.success) return { error: t.departmentName };
+  if (await departmentNameTaken(admin.orgId, name.data, key)) return { error: t.departmentTaken };
   await db.department.updateMany({ where: { orgId: admin.orgId, key }, data: { name: name.data } });
   revalidatePath("/", "layout");
-  redirect(orgPath(slug, "/admin?tab=departments"));
+  redirect(await localePath(orgPath(slug, "/admin?tab=departments")));
 }
 
 /** Members and pending invitations fall back to "no department"; a department that news or services still target can't go. */
@@ -347,15 +426,14 @@ export async function inviteMember(_: FormState, form: FormData): Promise<FormSt
   const admin = await requireAdmin(slugFrom(form));
   const raw = String(form.get("emails") ?? "").split(/[\s,;]+/).filter(Boolean);
   const parsed = inviteSchema.safeParse({ role: form.get("role"), department: form.get("department") ?? "" });
-  if (!raw.length || !parsed.success) return { error: "กรุณากรอกอีเมลอย่างน้อย 1 รายการ" };
+  const locale = await getLocale();
+  const t = TEXT[locale];
+  if (!raw.length || !parsed.success) return { error: t.noEmails };
   const invalid = raw.filter((e) => !normalizeEmail(e));
-  if (invalid.length) {
-    const more = invalid.length > 5 ? ` และอีก ${invalid.length - 5} รายการ` : "";
-    return { error: `อีเมลไม่ถูกต้อง: ${invalid.slice(0, 5).join(", ")}${more}` };
-  }
+  if (invalid.length) return { error: t.badEmails(invalid.slice(0, 5).join(", "), Math.max(0, invalid.length - 5)) };
   const emails = [...new Set(raw.map((e) => normalizeEmail(e)!))];
-  if (emails.length > MAX_INVITES) return { error: `เชิญได้ครั้งละไม่เกิน ${MAX_INVITES} คน` };
-  if (parsed.data.department && !(parsed.data.department in (await getDepartments(admin.orgId)))) return { error: "ไม่พบแผนกนี้" };
+  if (emails.length > MAX_INVITES) return { error: t.tooManyInvites(MAX_INVITES) };
+  if (parsed.data.department && !(parsed.data.department in (await getDepartments(admin.orgId)))) return { error: t.departmentNotFound };
 
   const members = await db.membership.findMany({
     where: { orgId: admin.orgId, user: { email: { in: emails } } },
@@ -363,12 +441,13 @@ export async function inviteMember(_: FormState, form: FormData): Promise<FormSt
   });
   const memberEmails = new Set(members.map((m) => m.user.email));
   const toInvite = emails.filter((e) => !memberEmails.has(e));
-  if (!toInvite.length) return { error: emails.length === 1 ? "อีเมลนี้เป็นสมาชิกของบริษัทอยู่แล้ว" : "ทุกอีเมลเป็นสมาชิกของบริษัทอยู่แล้ว" };
+  if (!toInvite.length) return { error: emails.length === 1 ? t.alreadyMember : t.allMembers };
 
   const data = { role: parsed.data.role, department: parsed.data.department || null, invitedBy: admin.user.email, acceptedAt: null };
   const portalUrl = process.env.AUTH_URL ?? "http://localhost:3000";
-  const subject = `คำเชิญเข้าใช้ ${admin.org.name} Workspace`;
-  const text = `${admin.user.name ?? admin.user.email} เชิญคุณเข้าใช้ ${admin.org.name} Workspace\n\nเข้าสู่ระบบด้วย Google / Microsoft ที่ใช้อีเมลนี้ หรือตั้งรหัสผ่านได้ที่ ${portalUrl}${orgPath(admin.org.slug, "/login/password")}`;
+  // In the language the admin is using: the invitee's own isn't known yet.
+  const subject = t.inviteSubject(admin.org.name);
+  const body = t.inviteBody(admin.user.name ?? admin.user.email, admin.org.name, `${portalUrl}${withLocale(locale, orgPath(admin.org.slug, "/login/password"))}`);
   const mailFailed: string[] = [];
   for (const email of toInvite) {
     await db.invitation.upsert({
@@ -380,7 +459,7 @@ export async function inviteMember(_: FormState, form: FormData): Promise<FormSt
     const existing = await db.user.findUnique({ where: { email } });
     if (existing?.emailVerifiedAt) await syncMemberships(existing.id, email);
     try {
-      await sendMail(email, subject, text);
+      await sendMail(email, subject, body);
     } catch (err) {
       mailFailed.push(email);
       console.error(`[invite] mail to ${email} failed:`, err);
@@ -388,11 +467,9 @@ export async function inviteMember(_: FormState, form: FormData): Promise<FormSt
   }
   revalidatePath("/", "layout");
 
-  const parts = [toInvite.length === 1 ? `ส่งคำเชิญถึง ${toInvite[0]} แล้ว` : `เชิญ ${toInvite.length} คนแล้ว`];
-  if (memberEmails.size) parts.push(`ข้าม ${memberEmails.size} คนที่เป็นสมาชิกอยู่แล้ว`);
-  if (mailFailed.length) {
-    parts.push(`ส่งอีเมลแจ้งไม่สำเร็จ ${mailFailed.length} คน (${mailFailed.join(", ")}) แต่คำเชิญบันทึกแล้ว เข้าสู่ระบบด้วยอีเมลนั้นได้เลย`);
-  }
+  const parts = [toInvite.length === 1 ? t.invitedOne(toInvite[0]) : t.invitedMany(toInvite.length)];
+  if (memberEmails.size) parts.push(t.skipped(memberEmails.size));
+  if (mailFailed.length) parts.push(t.mailFailed(mailFailed.length, mailFailed.join(", ")));
   return { ok: parts.join(" · ") };
 }
 
@@ -426,10 +503,10 @@ export async function switchOrg(form: FormData) {
     where: { userId: user.id, orgId: String(form.get("orgId") ?? "") },
     select: { org: { select: { slug: true } } },
   });
-  redirect(member ? orgPath(member.org.slug) : "/");
+  redirect(await localePath(member ? orgPath(member.org.slug) : "/"));
 }
 
 /** Signs out and returns to the company login page (or the global one). */
 export async function logout(slug: string | null) {
-  await signOut({ redirectTo: slug ? orgPath(slug, "/login") : "/" });
+  await signOut({ redirectTo: await localePath(slug ? orgPath(slug, "/login") : "/") });
 }

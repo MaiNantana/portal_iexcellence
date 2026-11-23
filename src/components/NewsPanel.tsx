@@ -4,10 +4,64 @@ import { ArrowUpRight, Bell, CalendarDays, ChevronDown, ChevronRight, ChevronUp,
 import Link from "next/link";
 import { useState } from "react";
 import type { NewsItem } from "@/lib/portal";
+import { defineText } from "@/i18n";
+import { useLocale } from "@/i18n/client";
 
 const ICONS: Record<string, LucideIcon> = { hr: Users, it: Monitor, events: CalendarDays, production: Factory };
 
+const TEXT = defineText({
+  th: {
+    region: "ข่าวสารและประกาศบริษัท",
+    title: "ข่าวสารและประกาศ",
+    count: (n: number) => `${n} ข่าว`,
+    lead: "ประกาศที่ต้องรับทราบอยู่ก่อน · ข่าวล่าสุดอยู่ในกล่องเดียวกัน",
+    pending: (n: number) => `${n} ประกาศที่ยังไม่รับทราบ`,
+    show: "แสดงข่าวสาร",
+    hide: "ยุบข่าวสาร",
+    editedAck: "มีการแก้ไข · ต้องรับทราบ",
+    importantAck: "ประกาศสำคัญ · ต้องรับทราบ",
+    acked: "รับทราบแล้ว",
+    latestNews: "ข่าวสารล่าสุด",
+    readAck: "อ่านและรับทราบ",
+    read: "อ่านประกาศ",
+    empty: "ยังไม่มีข่าวสาร",
+    latest: "ข่าวล่าสุด",
+    compact: "แสดงแบบย่อ",
+    all: "ดูข่าวทั้งหมด",
+    allChannels: "ทั้งหมด",
+    hasFiles: "มีไฟล์แนบ",
+    editedWaiting: "แก้ไขแล้ว · รอรับทราบ",
+    waiting: "รอรับทราบ",
+    emptyChannel: "ไม่มีข่าวใน Channel นี้",
+  },
+  en: {
+    region: "Company news and announcements",
+    title: "News and announcements",
+    count: (n: number) => `${n} post${n === 1 ? "" : "s"}`,
+    lead: "Announcements to acknowledge come first · the latest news is in the same box",
+    pending: (n: number) => `${n} announcement${n === 1 ? "" : "s"} to acknowledge`,
+    show: "Show news",
+    hide: "Hide news",
+    editedAck: "Edited · please acknowledge",
+    importantAck: "Important · please acknowledge",
+    acked: "Acknowledged",
+    latestNews: "Latest news",
+    readAck: "Read and acknowledge",
+    read: "Read",
+    empty: "No news yet",
+    latest: "Latest news",
+    compact: "Show less",
+    all: "See all news",
+    allChannels: "All",
+    hasFiles: "Has attachments",
+    editedWaiting: "Edited · to acknowledge",
+    waiting: "To acknowledge",
+    emptyChannel: "No news in this channel",
+  },
+});
+
 export function NewsPanel({ items, channels, base }: { items: NewsItem[]; channels: Record<string, string>; base: string }) {
+  const t = TEXT[useLocale()];
   const [collapsed, setCollapsed] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [channel, setChannel] = useState("all");
@@ -21,23 +75,23 @@ export function NewsPanel({ items, channels, base }: { items: NewsItem[]; channe
   const featuredPending = featured && featured.requiresAck && !featured.acked;
 
   return (
-    <section id="news" aria-label="ข่าวสารและประกาศบริษัท">
+    <section id="news" aria-label={t.region}>
       <div className="sec-header news-condensed-header">
         <div>
           <h3>
-            ข่าวสารและประกาศ <span className="news-total">{items.length} ข่าว</span>
+            {t.title} <span className="news-total">{t.count(items.length)}</span>
           </h3>
-          <p>ประกาศที่ต้องรับทราบอยู่ก่อน · ข่าวล่าสุดอยู่ในกล่องเดียวกัน</p>
+          <p>{t.lead}</p>
         </div>
         <div className="news-actions">
           {pending.length > 0 && (
-            <Link href={`${base}/news/${pending[0].id}`} className="news-ack-shortcut" title={`${pending.length} ประกาศที่ยังไม่รับทราบ`}>
+            <Link href={`${base}/news/${pending[0].id}`} className="news-ack-shortcut" title={t.pending(pending.length)}>
               <Bell size={15} aria-hidden="true" />
               {pending.length}
             </Link>
           )}
           <button className="btn tiny" type="button" aria-expanded={!collapsed} onClick={() => setCollapsed(!collapsed)}>
-            {collapsed ? "แสดงข่าวสาร" : "ยุบข่าวสาร"}
+            {collapsed ? t.show : t.hide}
             {collapsed ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronUp size={14} aria-hidden="true" />}
           </button>
         </div>
@@ -50,7 +104,7 @@ export function NewsPanel({ items, channels, base }: { items: NewsItem[]; channe
               <span className="pin-icon" aria-hidden="true"><Megaphone size={20} strokeWidth={1.75} /></span>
               <div className="pin-body">
                 <span className={`chip ${featuredPending ? "warn" : ""}`}>
-                  {featuredPending ? (featured.edited ? "มีการแก้ไข · ต้องรับทราบ" : "ประกาศสำคัญ · ต้องรับทราบ") : featured.requiresAck ? "รับทราบแล้ว" : "ข่าวสารล่าสุด"}
+                  {featuredPending ? (featured.edited ? t.editedAck : t.importantAck) : featured.requiresAck ? t.acked : t.latestNews}
                 </span>
                 <strong>{featured.title}</strong>
                 <p>{featured.body}</p>
@@ -59,17 +113,17 @@ export function NewsPanel({ items, channels, base }: { items: NewsItem[]; channe
                 </small>
               </div>
               <Link href={`${base}/news/${featured.id}`} className="btn primary tiny">
-                {featuredPending ? "อ่านและรับทราบ" : "อ่านประกาศ"} <ArrowUpRight size={14} aria-hidden="true" />
+                {featuredPending ? t.readAck : t.read} <ArrowUpRight size={14} aria-hidden="true" />
               </Link>
             </div>
           ) : (
-            <div className="empty" style={{ margin: 16 }}>ยังไม่มีข่าวสาร</div>
+            <div className="empty" style={{ margin: 16 }}>{t.empty}</div>
           )}
 
           {items.length > 1 && (
             <div className="news-compact-last">
               <div className="news-compact-caption">
-                <strong>ข่าวล่าสุด</strong>
+                <strong>{t.latest}</strong>
                 <button
                   type="button"
                   className="inline-link"
@@ -79,13 +133,13 @@ export function NewsPanel({ items, channels, base }: { items: NewsItem[]; channe
                     setChannel("all");
                   }}
                 >
-                  {expanded ? "แสดงแบบย่อ" : "ดูข่าวทั้งหมด"}
+                  {expanded ? t.compact : t.all}
                   {expanded ? <ChevronUp size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}
                 </button>
               </div>
               {expanded && (
                 <div className="filterbar">
-                  {[["all", "ทั้งหมด"], ...Object.entries(channels)].map(([key, label]) => (
+                  {[["all", t.allChannels], ...Object.entries(channels)].map(([key, label]) => (
                     <button key={key} type="button" className={channel === key ? "active" : ""} onClick={() => setChannel(key)}>
                       {label}
                     </button>
@@ -101,20 +155,20 @@ export function NewsPanel({ items, channels, base }: { items: NewsItem[]; channe
                       <div className="news-ic"><Icon size={17} strokeWidth={1.75} aria-hidden="true" /></div>
                       <div className="news-row-copy">
                         <b>
-                          {n.hasFiles && <Paperclip size={13} aria-label="มีไฟล์แนบ" style={{ marginRight: 4, verticalAlign: -2 }} />}
+                          {n.hasFiles && <Paperclip size={13} aria-label={t.hasFiles} style={{ marginRight: 4, verticalAlign: -2 }} />}
                           {n.title}
                         </b>
                         <small>
                           {channels[n.channel] ?? n.channel} · {n.date}
                         </small>
                       </div>
-                      {n.requiresAck && !n.acked && <span className="chip warn">{n.edited ? "แก้ไขแล้ว · รอรับทราบ" : "รอรับทราบ"}</span>}
+                      {n.requiresAck && !n.acked && <span className="chip warn">{n.edited ? t.editedWaiting : t.waiting}</span>}
                       <ChevronRight className="news-row-arrow" size={17} aria-hidden="true" />
                     </Link>
                     );
                   })
                 ) : (
-                  <div className="empty" style={{ gridColumn: "1/-1", margin: "10px 0" }}>ไม่มีข่าวใน Channel นี้</div>
+                  <div className="empty" style={{ gridColumn: "1/-1", margin: "10px 0" }}>{t.emptyChannel}</div>
                 )}
               </div>
             </div>

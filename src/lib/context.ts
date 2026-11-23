@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
+import { stripLocale, withLocale } from "@/i18n";
 import { db } from "@/lib/db";
 import { syncMemberships } from "@/lib/identity";
 import { isSuperadmin } from "@/lib/superadmin";
@@ -18,8 +19,10 @@ export function orgPath(slug: string, path = "") {
 
 /** Login page for a destination: the company's own login (/abc/login) for tenant paths, else the root. */
 export function loginPath(next: string) {
-  const slug = next.split(/[/?#]/)[1];
-  return `${slug ? orgPath(slug, "/login") : "/"}?next=${encodeURIComponent(next)}`;
+  const { locale, path } = stripLocale(next);
+  const slug = path.split(/[/?#]/)[1];
+  const login = slug ? orgPath(slug, "/login") : "/";
+  return `${locale ? withLocale(locale, login) : login}?next=${encodeURIComponent(next)}`;
 }
 
 /**

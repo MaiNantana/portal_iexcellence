@@ -4,11 +4,55 @@ import { useRef, useState, useTransition } from "react";
 import { inviteMember } from "@/app/actions";
 import { listHrInvitees, type HrInvitee } from "@/app/hr-actions";
 import { ActionForm } from "@/components/ActionForm";
+import { defineText } from "@/i18n";
+import { useLocale } from "@/i18n/client";
 
-const STATUS_LABEL = { member: "เป็นสมาชิกแล้ว", invited: "เชิญแล้ว" } as const;
+const TEXT = defineText({
+  th: {
+    status: { member: "เป็นสมาชิกแล้ว", invited: "เชิญแล้ว" },
+    send: "ส่งคำเชิญ",
+    emails: "อีเมล",
+    emailsPlaceholder: "name@company.com\nหลายคน: บรรทัดละคน หรือคั่นด้วยจุลภาค",
+    pickFromHr: "เลือกจากรายชื่อพนักงานใน HR",
+    search: "ค้นหาพนักงาน",
+    searchPlaceholder: "ค้นหาชื่อ รหัส แผนก หรืออีเมล",
+    unpickAll: "ไม่เลือกทั้งหมด",
+    pickAll: (n: number) => `เลือกทั้งหมด (${n})`,
+    loading: "กำลังโหลดรายชื่อจาก HR...",
+    noMatch: "ไม่พบพนักงานที่ค้นหา",
+    noEmployees: "ไม่มีพนักงานใน HR",
+    noEmail: "ไม่มีอีเมลใน HR",
+    close: "ปิด",
+    addPicked: (n: number) => `เพิ่ม ${n} คนลงในรายการ`,
+    role: "บทบาท",
+    department: "แผนก",
+    noDepartment: "ไม่ระบุ",
+  },
+  en: {
+    status: { member: "Already a member", invited: "Invited" },
+    send: "Send invitations",
+    emails: "Emails",
+    emailsPlaceholder: "name@company.com\nSeveral people: one per line, or separated by commas",
+    pickFromHr: "Pick from the HR employee list",
+    search: "Search employees",
+    searchPlaceholder: "Search name, code, department or email",
+    unpickAll: "Unselect all",
+    pickAll: (n: number) => `Select all (${n})`,
+    loading: "Loading employees from HR...",
+    noMatch: "No employees match",
+    noEmployees: "No employees in HR",
+    noEmail: "No email in HR",
+    close: "Close",
+    addPicked: (n: number) => `Add ${n} to the list`,
+    role: "Role",
+    department: "Department",
+    noDepartment: "None",
+  },
+});
 
 /** Invite form: several emails at once, typed or picked from the company's HR employee list. */
 export function InviteMembersForm({ slug, departments, hrEnabled }: { slug: string; departments: Record<string, string>; hrEnabled: boolean }) {
+  const t = TEXT[useLocale()];
   const emailsRef = useRef<HTMLTextAreaElement>(null);
   const [open, setOpen] = useState(false);
   const [employees, setEmployees] = useState<HrInvitee[] | null>(null);
@@ -67,21 +111,21 @@ export function InviteMembersForm({ slug, departments, hrEnabled }: { slug: stri
   }
 
   return (
-    <ActionForm org={slug} action={inviteMember} submitLabel="ส่งคำเชิญ">
+    <ActionForm org={slug} action={inviteMember} submitLabel={t.send}>
       <div className="field">
-        <label htmlFor="inv-emails">อีเมล</label>
+        <label htmlFor="inv-emails">{t.emails}</label>
         <textarea
           ref={emailsRef}
           id="inv-emails"
           name="emails"
           className="inv-emails"
           required
-          placeholder={"name@company.com\nหลายคน: บรรทัดละคน หรือคั่นด้วยจุลภาค"}
+          placeholder={t.emailsPlaceholder}
         />
         {hrEnabled && !open && (
           <div>
             <button type="button" className="btn tiny" onClick={openPicker}>
-              เลือกจากรายชื่อพนักงานใน HR
+              {t.pickFromHr}
             </button>
           </div>
         )}
@@ -92,23 +136,23 @@ export function InviteMembersForm({ slug, departments, hrEnabled }: { slug: stri
           <div className="hrpick-bar">
             <input
               type="search"
-              aria-label="ค้นหาพนักงาน"
-              placeholder="ค้นหาชื่อ รหัส แผนก หรืออีเมล"
+              aria-label={t.search}
+              placeholder={t.searchPlaceholder}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}
             />
             <button type="button" className="btn tiny" onClick={toggleAllShown} disabled={!selectable.length}>
-              {allShownPicked ? "ไม่เลือกทั้งหมด" : `เลือกทั้งหมด (${selectable.length})`}
+              {allShownPicked ? t.unpickAll : t.pickAll(selectable.length)}
             </button>
           </div>
 
           {loading ? (
-            <p className="quiet">กำลังโหลดรายชื่อจาก HR...</p>
+            <p className="quiet">{t.loading}</p>
           ) : error ? (
             <div className="notice error">{error}</div>
           ) : !shown.length ? (
-            <p className="quiet">{employees?.length ? "ไม่พบพนักงานที่ค้นหา" : "ไม่มีพนักงานใน HR"}</p>
+            <p className="quiet">{employees?.length ? t.noMatch : t.noEmployees}</p>
           ) : (
             <div className="hrpick-list">
               {shown.map((e) => {
@@ -121,10 +165,10 @@ export function InviteMembersForm({ slug, departments, hrEnabled }: { slug: stri
                       <small>
                         {[e.code, e.department, multipleDbs ? e.db : ""].filter(Boolean).join(" · ")}
                         {" · "}
-                        {e.email ?? "ไม่มีอีเมลใน HR"}
+                        {e.email ?? t.noEmail}
                       </small>
                     </span>
-                    {e.status && <span className={`chip ${e.status === "member" ? "gray" : "warn"}`}>{STATUS_LABEL[e.status]}</span>}
+                    {e.status && <span className={`chip ${e.status === "member" ? "gray" : "warn"}`}>{t.status[e.status]}</span>}
                   </label>
                 );
               })}
@@ -133,26 +177,26 @@ export function InviteMembersForm({ slug, departments, hrEnabled }: { slug: stri
 
           <div className="hrpick-foot">
             <button type="button" className="btn tiny" onClick={() => setOpen(false)}>
-              ปิด
+              {t.close}
             </button>
             <button type="button" className="btn tiny primary" onClick={addPicked} disabled={!picked.size}>
-              เพิ่ม {picked.size} คนลงในรายการ
+              {t.addPicked(picked.size)}
             </button>
           </div>
         </div>
       )}
 
       <div className="field">
-        <label htmlFor="inv-role">บทบาท</label>
+        <label htmlFor="inv-role">{t.role}</label>
         <select id="inv-role" name="role" defaultValue="EMPLOYEE">
           <option value="EMPLOYEE">Employee</option>
           <option value="ADMIN">Admin</option>
         </select>
       </div>
       <div className="field">
-        <label htmlFor="inv-dept">แผนก</label>
+        <label htmlFor="inv-dept">{t.department}</label>
         <select id="inv-dept" name="department" defaultValue="">
-          <option value="">ไม่ระบุ</option>
+          <option value="">{t.noDepartment}</option>
           {Object.entries(departments).map(([k, v]) => (
             <option key={k} value={k}>
               {v}

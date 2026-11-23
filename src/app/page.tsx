@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { AuthScreen } from "@/components/AuthScreen";
 import { Onboarding } from "@/components/Onboarding";
 import { currentUser, homePathFor, safeNext } from "@/lib/context";
+import { localePath } from "@/i18n/server";
 
 /**
  * The only app page at the root. Signed out: global sign-in (for people who don't know their
@@ -22,6 +23,6 @@ export default async function RootPage({
   }
   if (next !== "/") redirect(next);
   const home = await homePathFor(user.id, user.email, user.lastOrgId);
-  if (home && !start) redirect(home);
+  if (home && !start) redirect(await localePath(home));
   return <Onboarding user={user} hasCompany={!!home} />;
 }
