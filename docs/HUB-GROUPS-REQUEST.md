@@ -1,5 +1,7 @@
 # คำขอเพิ่มฟีเจอร์ Notification Hub: ส่งข้อความเข้า "กลุ่ม" LINE / Telegram
 
+> **อัปเดต 2026-11-25:** ทีม Hub ทำกลุ่ม LINE เสร็จแล้วในรูปแบบ Admin API (`/api/admin`: departments, group-codes, groups, unlink, push-group, header `x-admin-key`) ไม่ใช่ตามสเปกด้านล่าง Portal ต่อกับ Admin API นั้นแล้ว (`src/lib/hub.ts`, env `HUB_ADMIN_URL` / `HUB_ADMIN_KEY`) · 1 บริษัท = 1 แผนกใน Hub มีได้หลายกลุ่ม · Telegram กลุ่มยังไม่มีใน Hub · Discord ใช้ webhook ของช่องเอง (`src/lib/groups.ts`) · เมื่อ Hub ทำ `/v1/group-keys` + `to.groups` ค่อยย้ายไปใช้ `/v1`
+
 จาก: ทีม iExcellence Portal / TaskExcellence
 ถึง: ทีม Notification Hub
 วันที่: 2026-11-24

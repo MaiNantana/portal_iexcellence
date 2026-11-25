@@ -5,8 +5,8 @@ import { defineText, withLocale } from "@/i18n";
 import { getLocale } from "@/i18n/server";
 
 // Customer-facing setup guide for LINE / Telegram / Discord notifications (people set it up themselves).
-// Group notifications need the Notification Hub's group API (docs/HUB-GROUPS-REQUEST.md): until
-// HUB_GROUPS_ENABLED=1 is set that section shows as "coming soon".
+// Groups: Discord channels always work (webhooks); LINE groups need the Hub's Admin API
+// (HUB_ADMIN_URL / HUB_ADMIN_KEY), and the LINE steps say "coming soon" until those are set.
 const groupsEnabled = () => hubGroupsEnabled();
 
 type Section = { id: string; title: string; who?: string; soon?: boolean; intro?: string; steps: string[]; notes?: string[] };
@@ -79,23 +79,25 @@ const TEXT = defineText({
       },
       {
         id: "groups",
-        title: "5. ส่งแจ้งเตือนเข้ากลุ่ม LINE / Telegram",
+        title: "5. ส่งแจ้งเตือนเข้ากลุ่ม LINE / ช่อง Discord",
         who: "admin ของบริษัท",
-        soon: !groupsEnabled(),
-        intro: groupsEnabled()
-          ? "ให้แจ้งเตือนจาก Task เข้ากลุ่มแชทของทีม แทนหรือเพิ่มจากแชทส่วนตัว"
-          : "กำลังพัฒนาร่วมกับผู้ให้บริการระบบแจ้งเตือน เมื่อเปิดใช้ จะตั้งค่าตามขั้นตอนนี้",
+        intro: "ให้แจ้งเตือนจาก Task เข้ากลุ่มแชทของทีม แทนหรือเพิ่มจากแชทส่วนตัว บริษัทหนึ่งเชื่อมได้หลายกลุ่ม ทั้ง LINE และ Discord",
         steps: [
-          "admin เปิดหน้า ช่องทางรับแจ้งเตือน › กลุ่มแจ้งเตือน แล้วกด เชื่อมกลุ่มใหม่ จะได้คำสั่ง /link พร้อมรหัส (ใช้ได้ 15 นาที)",
-          "ในกลุ่ม LINE: กดชื่อกลุ่ม › เชิญ แล้วค้นหาและเชิญ Iex.Notification ในกลุ่ม Telegram: เพิ่มบอทแจ้งเตือนเป็นสมาชิก",
-          "ใครก็ได้ในกลุ่มพิมพ์คำสั่ง /link ตามด้วยรหัส เช่น /link K7P2QX",
-          "บอทตอบยืนยันในกลุ่ม และกลุ่มจะขึ้นในรายการ กลุ่มแจ้งเตือน ของ Portal",
-          "ใน Task ตั้ง Automation › Action เลือก Send to LINE / Telegram group แล้วเลือกกลุ่ม ใส่ข้อความเองได้เหมือนการส่งส่วนตัว",
+          ...(groupsEnabled()
+            ? [
+                "กลุ่ม LINE: admin เปิดหน้า ช่องทางรับแจ้งเตือน › กลุ่มแจ้งเตือน แล้วกด + เชื่อมกลุ่ม LINE จะได้คำสั่ง /register พร้อมรหัส (ใช้ได้ 24 ชั่วโมง 1 รหัสต่อ 1 กลุ่ม)",
+                "ในกลุ่ม LINE: กดชื่อกลุ่ม › เชิญ แล้วค้นหาและเชิญ Iex.Notification จากนั้นใครก็ได้ในกลุ่มพิมพ์คำสั่ง เช่น /register ABCD-2345 บอทจะตอบยืนยัน",
+              ]
+            : ["กลุ่ม LINE: เร็ว ๆ นี้"]),
+          "ช่อง Discord: ใน Discord คลิกขวาที่ช่อง › Edit Channel › Integrations › Webhooks › New Webhook › Copy Webhook URL แล้วใน Portal กด + เพิ่มช่อง Discord วางลิงก์ ตั้งชื่อ แล้วกด เพิ่ม",
+          "กลุ่มที่เชื่อมแล้วขึ้นในรายการ กลุ่มแจ้งเตือน กด ทดสอบ เพื่อลองส่งได้ ทำซ้ำเพื่อเพิ่มกลุ่มอื่น",
+          "ใน Task ตั้ง Automation › Action เลือก Send to group แล้วเลือกกลุ่ม ใส่ข้อความเองได้เหมือนการส่งส่วนตัว",
         ],
         notes: [
-          "บอทที่ถูกเชิญเข้ากลุ่มเฉย ๆ จะไม่ส่งอะไรเข้ากลุ่ม จนกว่าจะพิมพ์ /link ด้วยรหัสจาก Portal",
-          "LINE นับโควตาข้อความตามจำนวนสมาชิกในกลุ่ม: ส่งเข้ากลุ่ม 20 คน 1 ครั้ง = 20 ข้อความ ควรเลือกส่งเฉพาะเรื่องสำคัญ",
-          "เลิกส่งเข้ากลุ่ม: กด ยกเลิก ที่กลุ่มนั้นใน Portal หรือเอาบอทออกจากกลุ่ม",
+          "LINE นับโควตาข้อความตามจำนวนสมาชิกในกลุ่ม: ส่งเข้ากลุ่ม 20 คน 1 ครั้ง = 20 ข้อความ ควรเลือกส่งเฉพาะเรื่องสำคัญ Discord ไม่มีโควตา",
+          "Webhook URL ของ Discord ใครได้ไปก็โพสต์เข้าช่องได้ อย่าแชร์ Portal เก็บไว้แบบเข้ารหัส",
+          "เลิกส่งเข้ากลุ่ม: กด ยกเลิก ที่กลุ่มนั้นใน Portal",
+          "กลุ่ม Telegram: เร็ว ๆ นี้",
         ],
       },
       {
@@ -178,23 +180,25 @@ const TEXT = defineText({
       },
       {
         id: "groups",
-        title: "5. Notifications to a LINE / Telegram group",
+        title: "5. Notifications to LINE groups / Discord channels",
         who: "Company admins",
-        soon: !groupsEnabled(),
-        intro: groupsEnabled()
-          ? "Send Task notifications into your team's group chat, instead of or as well as personal chats"
-          : "Being built with the notification provider. Once available, it is set up like this",
+        intro: "Send Task notifications into your team's group chats, instead of or as well as personal chats. A company can connect any number of LINE groups and Discord channels",
         steps: [
-          "An admin opens Notification channels › Notification groups and presses Connect a group, which gives a /link command with a code (valid 15 minutes)",
-          "LINE group: tap the group name › Invite, find and invite Iex.Notification. Telegram group: add the notification bot as a member",
-          "Anyone in the group sends /link followed by the code, e.g. /link K7P2QX",
-          "The bot confirms in the group, and the group appears under Notification groups in the Portal",
-          "In Task, add an Automation › Action: Send to LINE / Telegram group, and pick the group",
+          ...(groupsEnabled()
+            ? [
+                "LINE group: an admin opens Notification channels › Notification groups and presses + Connect a LINE group, which gives a /register command with a code (valid 24 hours, one code per group)",
+                "In the LINE group: tap the group name › Invite, find and invite Iex.Notification. Then anyone in the group sends the command, e.g. /register ABCD-2345, and the bot confirms",
+              ]
+            : ["LINE groups: coming soon"]),
+          "Discord channel: in Discord, right-click the channel › Edit Channel › Integrations › Webhooks › New Webhook › Copy Webhook URL. In the Portal press + Add a Discord channel, paste it, name it and press Add",
+          "Connected groups appear under Notification groups; press Test to try one. Repeat to add more",
+          "In Task, add an Automation › Action: Send to group, and pick the group",
         ],
         notes: [
-          "A bot that is only invited sends nothing to the group until someone sends /link with a code from the Portal",
-          "LINE counts messages per group member: one message to a 20-person group = 20 messages of your quota. Use it for important updates",
-          "To stop: press Disconnect on that group in the Portal, or remove the bot from the group",
+          "LINE counts messages per group member: one message to a 20-person group = 20 messages of your quota. Use it for important updates. Discord has no quota",
+          "Anyone with a Discord webhook URL can post into that channel, so don't share it. The Portal stores it encrypted",
+          "To stop: press Disconnect on that group in the Portal",
+          "Telegram groups: coming soon",
         ],
       },
       {

@@ -142,66 +142,86 @@ export async function setHubPrimary(orgSlug: string, userId: string, channel: Hu
   await hub("PUT", `/v1/users/${encodeURIComponent(userId)}/primary`, { company: company(orgSlug), channel });
 }
 
-// ---- Group chats (LINE / Telegram groups) ----
-// Built against docs/HUB-GROUPS-REQUEST.md before the Hub has it. Off until HUB_GROUPS_ENABLED=1;
-// when the Hub's real API arrives, adjust these five functions to match it.
+// ---- LINE groups: the Hub's Admin API (ADMIN-GROUPS-API, live on prod 2026-11-24) ----
+// https://notify.iexcellence.cloud/api/admin with `x-admin-key`. That key works for EVERY company, so
+// Portal checks the caller's company itself and only ever passes that company here.
+// Each Portal company gets one Hub "department" (named after the company); every group registered with
+// one of its codes belongs to it, so a company can have any number of LINE groups.
+// Telegram groups are not in the Hub yet.
 
-export type HubGroupStatus = "connected" | "left";
-export type HubGroup = {
-  groupId: string;
-  channel: HubChannel;
-  name: string;
-  status: HubGroupStatus;
-  memberCount?: number;
-  linkedAt?: string;
-  linkedBy?: { userId?: string; email?: string };
-};
-export type HubGroupKey = { key: string; expiresAt: string; command?: string };
-export type HubGroupResult = { group: string; status: "sent" | "left" | "not_found" | "failed"; channel?: HubChannel; memberCount?: number; error?: string };
+export type HubGroup = { groupId: string; name: string; status: "connected" | "left" };
+export type HubGroupCode = { code: string; expiresAt: string; command: string };
 
 export function hubGroupsEnabled() {
-  return hubConfigured() && process.env.HUB_GROUPS_ENABLED === "1";
+  return Boolean(process.env.HUB_ADMIN_URL && process.env.HUB_ADMIN_KEY);
 }
 
-/** API #5: one-time key a group types as `/link <key>` to belong to this company (15 min, one group). */
-export async function createGroupLinkKey(org: { slug: string; name: string }, user: { id: string; email: string }) {
-  const { data } = await hub<HubGroupKey>("POST", "/v1/group-link-keys", {
-    company: company(org.slug),
-    companyName: org.name.slice(0, 100),
-    requestedBy: { userId: user.id, email: user.email },
+async function hubAdmin<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const base = process.env.HUB_ADMIN_URL;
+  const key = process.env.HUB_ADMIN_KEY;
+  if (!base || !key) throw new HubError(0, "not_configured", "HUB_ADMIN_URL / HUB_ADMIN_KEY are not set");
+  const res = await fetch(`${base.replace(/\/+$/, "")}${path}`, {
+    method,
+    headers: { "x-admin-key": key, "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(20_000),
+    cache: "no-store",
   });
-  return { ...data, command: data.command || `/link ${data.key}` };
+  const data = (await res.json().catch(() => ({}))) as T & { error?: string; message?: string };
+  if (!res.ok) throw new HubError(res.status, data?.error ?? "http_error", data?.message ?? `Hub admin ${method} ${path} → ${res.status}`);
+  return data;
 }
 
-/** API #6: the company's linked groups. */
-export async function hubGroups(orgSlug: string) {
-  const { data } = await hub<{ groups: HubGroup[] }>("GET", `/v1/groups?company=${encodeURIComponent(company(orgSlug))}`);
-  return data.groups ?? [];
+/** The company's Hub department, created on first use. */
+async function companyDepartment(org: { slug: string; name: string }) {
+  const find = async () =>
+    (await hubAdmin<{ departments: { id: number; name: string }[] }>("GET", `/departments?company=${encodeURIComponent(company(org.slug))}`)).departments ?? [];
+  const existing = await find();
+  if (existing.length) return existing[0].id;
+  try {
+    const { department } = await hubAdmin<{ department: { id: number } }>("POST", "/departments", { company: company(org.slug), name: (org.name || org.slug).slice(0, 100) });
+    return department.id;
+  } catch (err) {
+    if (err instanceof HubError && err.code === "department_exists") return (await find())[0].id;
+    throw err;
+  }
 }
 
-/** API #7: stop sending to a group; `leave` also takes the bot out of it. */
-export async function unlinkHubGroup(orgSlug: string, groupId: string, leave = true) {
-  const { data } = await hub<{ unlinked: boolean }>("POST", `/v1/groups/${encodeURIComponent(groupId)}/unlink`, {
-    company: company(orgSlug),
-    leave,
-  });
+/** One-time code (24 h): invite the LINE OA into the group, then type `/register <code>` there. */
+export async function createGroupCode(org: { slug: string; name: string }): Promise<HubGroupCode> {
+  const departmentId = await companyDepartment(org);
+  const { code } = await hubAdmin<{ code: { code: string; expires_at: string } }>("POST", "/group-codes", { departmentId, ttlHours: 24 });
+  return { code: code.code, expiresAt: code.expires_at, command: `/register ${code.code}` };
+}
+
+/** The company's LINE groups (active or left; unlinked ones are not listed). */
+export async function hubGroups(orgSlug: string): Promise<HubGroup[]> {
+  const { groups } = await hubAdmin<{ groups: { group_id: string; group_name: string | null; status: string }[] }>(
+    "GET",
+    `/groups?company=${encodeURIComponent(company(orgSlug))}`,
+  );
+  return (groups ?? [])
+    .filter((g) => g.status === "active" || g.status === "left")
+    .map((g) => ({ groupId: g.group_id, name: g.group_name || "LINE group", status: g.status === "active" ? "connected" : "left" }));
+}
+
+/** Stop sending to a group (the OA stays in it). Only unlinks it if it belongs to this company. */
+export async function unlinkHubGroup(orgSlug: string, groupId: string) {
+  const data = await hubAdmin<{ unlinked: boolean }>("POST", `/groups/${encodeURIComponent(groupId)}/unlink`, { company: company(orgSlug) });
   return data.unlinked;
 }
 
-/** /v1/events with to.groups: one text to some of the company's groups (max 50). */
-export async function sendHubGroups(org: { slug: string; name: string }, groupIds: string[], text: string, idempotencyKey: string, ref?: string) {
-  const { data } = await hub<{ messageId: string; groups?: HubGroupResult[] }>(
-    "POST",
-    "/v1/events",
-    {
-      company: company(org.slug),
-      companyName: org.name.slice(0, 100),
-      event: "common.announcement",
-      to: { users: [], groups: groupIds.slice(0, 50) },
-      data: { text: openLinksInExternalBrowser(text).slice(0, 4900) },
-      ...(ref ? { ref: ref.slice(0, 128) } : {}),
-    },
-    { timeoutMs: 60_000, idempotencyKey },
-  );
-  return data.groups ?? [];
+/** One text into one LINE group. The caller must have checked the group is this company's. */
+export async function pushHubGroup(groupId: string, text: string): Promise<"sent" | "left"> {
+  try {
+    const { results } = await hubAdmin<{ results: { groupId: string; ok: boolean }[] }>("POST", "/push-group", {
+      groupId,
+      text: openLinksInExternalBrowser(text).slice(0, 5000),
+    });
+    if (results?.some((r) => r.ok)) return "sent";
+    throw new HubError(502, "push_failed", "LINE did not accept the message");
+  } catch (err) {
+    if (err instanceof HubError && err.code === "no_active_group") return "left";
+    throw err;
+  }
 }

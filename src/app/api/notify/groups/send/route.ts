@@ -1,16 +1,16 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { hubGroupsEnabled, sendHubGroups } from "@/lib/hub";
+import { sendToGroups } from "@/lib/groups";
 import { fromThisServer } from "@/lib/local-call";
 
 /**
- * POST /api/notify/groups/send { "email": "a@acme.com", "org": "acme", "groupIds": ["grp_…"], "text": "…", "ref"?: "…" }
- * Task's Automation "Send to LINE / Telegram group". `email` is who triggered it: they must be a
- * member of `org`, and the Hub only sends to groups linked to that company. Same-server calls only.
+ * POST /api/notify/groups/send { "email": "a@acme.com", "org": "acme", "groupIds": ["C…", "dsc_…"], "text": "…" }
+ * Task's Automation "Send to group" (LINE group or Discord channel). `email` is who triggered it: they
+ * must be a member of `org`, and only that company's groups are sent to. Same-server calls only.
  * Optional header Idempotency-Key (same key = no duplicate).
  *
- *   { groups: [{ group: "grp_…", status: "sent" | "left" | "not_found" | "failed" }] }
+ *   { groups: [{ group: "C…" | "dsc_…", channel: "line" | "discord", status: "sent" | "left" | "not_found" | "failed" }] }
  */
 const Body = z.object({
   email: z.string().trim().toLowerCase().min(3).max(254),
@@ -25,8 +25,7 @@ export async function POST(req: Request) {
   if (refused) return refused;
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "validation", message: parsed.error.message }, { status: 400 });
-  if (!hubGroupsEnabled()) return Response.json({ error: "off", message: "group notifications are not enabled" }, { status: 503 });
-  const { email, org: slug, groupIds, text, ref } = parsed.data;
+  const { email, org: slug, groupIds, text } = parsed.data;
 
   const member = await db.membership.findFirst({
     where: { user: { email }, org: { slug } },
@@ -38,10 +37,10 @@ export async function POST(req: Request) {
     req.headers.get("idempotency-key")?.slice(0, 100) ||
     createHash("sha256").update(`${slug}\n${groupIds.join(",")}\n${text}\n${Date.now()}`).digest("hex").slice(0, 40);
   try {
-    const groups = await sendHubGroups(member.org, [...new Set(groupIds)], text, `group:${key}`, ref ?? "task-automation");
+    const groups = await sendToGroups(member.org, groupIds, text, `group:${key}`);
     return Response.json({ groups });
   } catch (err) {
-    console.error("[notify/groups/send] Hub failed:", err);
+    console.error("[notify/groups/send] failed:", err);
     return Response.json({ error: "hub_error", message: "could not reach the notification service" }, { status: 502 });
   }
 }

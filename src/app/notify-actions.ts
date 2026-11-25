@@ -5,7 +5,8 @@ import QRCode from "qrcode";
 import { revalidatePath } from "next/cache";
 import { realUser, requireMember } from "@/lib/context";
 import { db } from "@/lib/db";
-import { createGroupLinkKey, createLinkKey, deactivateHubUser, HubError, hubGroupsEnabled, sendHubGroups, setHubPrimary, unlinkHubGroup, type HubChannel } from "@/lib/hub";
+import { addDiscordGroup, DiscordWebhookError, isDiscordGroupId, removeDiscordGroup, sendToGroups } from "@/lib/groups";
+import { createGroupCode, createLinkKey, deactivateHubUser, HubError, hubGroupsEnabled, setHubPrimary, unlinkHubGroup, type HubChannel } from "@/lib/hub";
 import { notify } from "@/lib/notify";
 import { defineText } from "@/i18n";
 import { getLocale } from "@/i18n/server";
@@ -23,10 +24,17 @@ const TEXT = defineText({
     nothing: "ยังไม่มีช่องทางที่ส่งถึง เชื่อมช่องทางก่อน",
     failed: "ส่งไม่สำเร็จ ลองใหม่อีกครั้ง",
     adminOnly: "เฉพาะ admin ของบริษัท",
-    groupsOff: "การส่งเข้ากลุ่มยังไม่เปิดให้ใช้งาน",
+    groupsOff: "การส่งเข้ากลุ่ม LINE ยังไม่เปิดให้ใช้งาน",
     groupTest: (name: string) => `ทดสอบการแจ้งเตือนเข้ากลุ่ม "${name}" จาก iExcellence Portal ✓`,
     groupSent: "ส่งเข้ากลุ่มแล้ว",
-    groupLeft: "บอทไม่อยู่ในกลุ่มนี้แล้ว เชิญกลับแล้ว /link ใหม่",
+    groupLeft: "บอทไม่อยู่ในกลุ่มนี้แล้ว เชิญ Iex.Notification กลับเข้ากลุ่ม",
+    discordLeft: "Webhook นี้ถูกลบใน Discord แล้ว ลบแล้วเพิ่มใหม่",
+    webhook: {
+      invalid: "ลิงก์ไม่ใช่ Webhook URL ของ Discord (https://discord.com/api/webhooks/…)",
+      not_found: "ไม่พบ Webhook นี้ใน Discord (อาจถูกลบไปแล้ว)",
+      duplicate: "Webhook นี้เพิ่มไว้แล้ว",
+      unreachable: "ติดต่อ Discord ไม่ได้ ลองใหม่อีกครั้ง",
+    },
   },
   en: {
     badChannel: "Unknown channel.",
@@ -38,10 +46,17 @@ const TEXT = defineText({
     nothing: "No channel can receive it yet. Connect a channel first.",
     failed: "Sending failed. Please try again.",
     adminOnly: "Company admins only.",
-    groupsOff: "Group notifications are not available yet.",
+    groupsOff: "LINE groups are not available yet.",
     groupTest: (name: string) => `Test notification to "${name}" from iExcellence Portal ✓`,
     groupSent: "Sent to the group",
-    groupLeft: "The bot is no longer in this group. Invite it back and /link again.",
+    groupLeft: "The bot is no longer in this group. Invite Iex.Notification back into it.",
+    discordLeft: "This webhook was deleted in Discord. Remove it and add a new one.",
+    webhook: {
+      invalid: "That isn't a Discord webhook URL (https://discord.com/api/webhooks/…)",
+      not_found: "Discord doesn't know this webhook (it may have been deleted).",
+      duplicate: "This webhook is already added.",
+      unreachable: "Can't reach Discord. Please try again.",
+    },
   },
 });
 
@@ -111,7 +126,7 @@ export async function sendTestNotification(slug: string): Promise<{ ok?: string;
   }
 }
 
-// ---- Group chats (admins only; off until HUB_GROUPS_ENABLED=1) ----
+// ---- Notification groups (company admins): LINE groups via the Hub, Discord channels via webhooks ----
 
 export type GroupKeyState = { error?: string; command?: string; key?: string; expiresAt?: string };
 
@@ -119,29 +134,45 @@ async function requireGroupAdmin(slug: string) {
   const member = await requireMember(slug);
   const t = TEXT[await getLocale()];
   if (member.role !== "ADMIN") return { member, t, error: t.adminOnly };
-  if (!hubGroupsEnabled()) return { member, t, error: t.groupsOff };
   if (!(await notActing())) return { member, t, error: t.acting };
   return { member, t, error: undefined };
 }
 
-/** "Connect a group": a one-time `/link <key>` command for a LINE / Telegram group (15 minutes). */
+/** "Connect a LINE group": a one-time `/register <code>` (24 hours) to type in the group. */
 export async function requestGroupLinkKey(slug: string): Promise<GroupKeyState> {
   const { member, t, error } = await requireGroupAdmin(slug);
   if (error) return { error };
+  if (!hubGroupsEnabled()) return { error: t.groupsOff };
   try {
-    const k = await createGroupLinkKey(member.org, member.user);
-    return { key: k.key, command: k.command, expiresAt: k.expiresAt };
+    const k = await createGroupCode(member.org);
+    return { key: k.code, command: k.command, expiresAt: k.expiresAt };
   } catch (err) {
-    console.error("[notify] group link key failed:", err);
+    console.error("[notify] group code failed:", err);
     return { error: t.unreachable };
   }
+}
+
+/** "Add a Discord channel": a channel webhook URL pasted by the admin. */
+export async function addDiscordGroupAction(slug: string, _prev: { error?: string; ok?: boolean } | null, form: FormData): Promise<{ error?: string; ok?: boolean }> {
+  const { member, t, error } = await requireGroupAdmin(slug);
+  if (error) return { error };
+  try {
+    await addDiscordGroup(member.org.id, String(form.get("url") ?? ""), String(form.get("name") ?? ""), member.user.email);
+  } catch (err) {
+    if (err instanceof DiscordWebhookError) return { error: t.webhook[err.code] };
+    console.error("[notify] add Discord group failed:", err);
+    return { error: t.failed };
+  }
+  revalidatePath("/", "layout");
+  return { ok: true };
 }
 
 export async function unlinkGroup(slug: string, groupId: string) {
   const { member, error } = await requireGroupAdmin(slug);
   if (error) return;
   try {
-    await unlinkHubGroup(member.org.slug, groupId, true);
+    if (isDiscordGroupId(groupId)) await removeDiscordGroup(member.org.id, groupId);
+    else if (hubGroupsEnabled()) await unlinkHubGroup(member.org.slug, groupId);
   } catch (err) {
     console.error("[notify] group unlink failed:", err);
   }
@@ -152,9 +183,9 @@ export async function sendGroupTest(slug: string, groupId: string, name: string)
   const { member, t, error } = await requireGroupAdmin(slug);
   if (error) return { error };
   try {
-    const [r] = await sendHubGroups(member.org, [groupId], t.groupTest(name.slice(0, 80)), `portal:group-test:${randomUUID()}`, "portal-group-test");
+    const [r] = await sendToGroups(member.org, [groupId], t.groupTest(name.slice(0, 80)), `portal:group-test:${randomUUID()}`);
     if (r?.status === "sent") return { ok: t.groupSent };
-    if (r?.status === "left") return { error: t.groupLeft };
+    if (r?.status === "left") return { error: isDiscordGroupId(groupId) ? t.discordLeft : t.groupLeft };
     return { error: t.failed };
   } catch (err) {
     console.error("[notify] group test failed:", err);

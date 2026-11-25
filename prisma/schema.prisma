@@ -55,15 +55,16 @@ model Org {
   taskApiKeyHint String?
   createdAt      DateTime @default(now())
 
-  memberships  Membership[]
-  news         News[]
-  links        AppLink[]
-  accountLinks AccountLink[]
-  invitations  Invitation[]
-  domains      OrgDomain[]
-  joinRequests JoinRequest[]
-  services     Service[]
-  departments  Department[]
+  memberships   Membership[]
+  news          News[]
+  links         AppLink[]
+  accountLinks  AccountLink[]
+  invitations   Invitation[]
+  domains       OrgDomain[]
+  joinRequests  JoinRequest[]
+  services      Service[]
+  departments   Department[]
+  discordGroups DiscordGroup[]
 
   @@map("orgs")
 }
@@ -212,16 +213,16 @@ model AccountLink {
 }
 
 model News {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   orgId       String
   title       String
-  body        String   @db.Text
+  body        String    @db.Text
   channel     String
   /// "all" or a department code matching Membership.department.
-  audience    String   @default("all")
-  requiresAck Boolean  @default(false)
+  audience    String    @default("all")
+  requiresAck Boolean   @default(false)
   authorName  String
-  publishedAt DateTime @default(now())
+  publishedAt DateTime  @default(now())
   /// Last time the title or body changed; existing acknowledgements are cleared at that moment.
   editedAt    DateTime?
   /// Hidden from the Portal from this moment on; null means it never expires.
@@ -347,4 +348,25 @@ model NotifyDelivery {
   @@id([key, userId])
   @@index([createdAt])
   @@map("notify_deliveries")
+}
+
+/// Discord channels a company admin connected with a channel webhook ("Notification groups").
+/// Shown to Task as group id `dsc_<id>`, next to the Hub's LINE / Telegram groups.
+model DiscordGroup {
+  id             String   @id @default(cuid())
+  orgId          String
+  name           String
+  /// The webhook URL, AES-GCM encrypted (lib/secrets.ts): anyone holding it can post to the channel.
+  webhookEnc     String   @db.Text
+  webhookId      String
+  channelId      String?
+  /// connected | left (the webhook was deleted in Discord)
+  status         String   @default("connected")
+  createdByEmail String?
+  createdAt      DateTime @default(now())
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, webhookId])
+  @@map("discord_groups")
 }

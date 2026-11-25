@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
-import { requestGroupLinkKey, requestLinkKey, sendGroupTest, sendTestNotification, type GroupKeyState, type LinkKeyState } from "@/app/notify-actions";
+import { useActionState, useEffect, useRef, useState, useTransition } from "react";
+import { addDiscordGroupAction, requestGroupLinkKey, requestLinkKey, sendGroupTest, sendTestNotification, type GroupKeyState, type LinkKeyState } from "@/app/notify-actions";
 import { defineText } from "@/i18n";
 import { useLocale } from "@/i18n/client";
 
@@ -24,8 +24,16 @@ const TEXT = defineText({
     done: "เชื่อมเสร็จแล้ว รีเฟรช",
     sending: "กำลังส่ง...",
     test: "ส่งข้อความทดสอบถึงฉัน",
-    connectGroup: "เชื่อมกลุ่มใหม่",
-    groupSteps: "1. เชิญ Iex.Notification (LINE) หรือบอทแจ้งเตือน (Telegram) เข้ากลุ่ม\n2. พิมพ์คำสั่งนี้ในกลุ่ม",
+    connectGroup: "+ เชื่อมกลุ่ม LINE",
+    groupSteps: "1. เชิญ LINE Official Account \"Iex.Notification\" เข้ากลุ่ม LINE\n2. พิมพ์คำสั่งนี้ในกลุ่ม (ใช้ได้ 1 กลุ่ม)",
+    groupTimeLeft: (h: number, m: number) => `ใช้ได้อีก ${h} ชม. ${m} นาที`,
+    addDiscord: "+ เพิ่มช่อง Discord",
+    discordSteps: "ใน Discord: คลิกขวาที่ช่อง › Edit Channel › Integrations › Webhooks › New Webhook › Copy Webhook URL แล้ววางด้านล่าง",
+    webhookUrl: "Webhook URL",
+    groupName: "ชื่อที่แสดง (ไม่บังคับ)",
+    add: "เพิ่ม",
+    adding: "กำลังเพิ่ม...",
+    cancel: "ยกเลิก",
     copy: "คัดลอก",
     copied: "คัดลอกแล้ว",
     groupDone: "บอทตอบยืนยันแล้ว รีเฟรช",
@@ -47,8 +55,16 @@ const TEXT = defineText({
     done: "Done, refresh",
     sending: "Sending...",
     test: "Send me a test message",
-    connectGroup: "Connect a group",
-    groupSteps: "1. Invite Iex.Notification (LINE) or the notification bot (Telegram) to the group\n2. Send this command in the group",
+    connectGroup: "+ Connect a LINE group",
+    groupSteps: "1. Invite the LINE Official Account \"Iex.Notification\" into the LINE group\n2. Send this command in the group (works for one group)",
+    groupTimeLeft: (h: number, m: number) => `Valid for ${h} h ${m} min`,
+    addDiscord: "+ Add a Discord channel",
+    discordSteps: "In Discord: right-click the channel › Edit Channel › Integrations › Webhooks › New Webhook › Copy Webhook URL, then paste it below.",
+    webhookUrl: "Webhook URL",
+    groupName: "Display name (optional)",
+    add: "Add",
+    adding: "Adding...",
+    cancel: "Cancel",
     copy: "Copy",
     copied: "Copied",
     groupDone: "The bot confirmed, refresh",
@@ -130,7 +146,7 @@ export function TestNotificationButton({ slug }: { slug: string }) {
   );
 }
 
-/** Admins: "Connect a group" → the `/link <key>` command to send in a LINE / Telegram group. */
+/** Admins: "Connect a LINE group" → the `/register <code>` command to send in the group (24 hours). */
 export function ConnectGroupButton({ slug }: { slug: string }) {
   const t = TEXT[useLocale()];
   const [state, setState] = useState<GroupKeyState | null>(null);
@@ -173,7 +189,9 @@ export function ConnectGroupButton({ slug }: { slug: string }) {
               {copied ? t.copied : t.copy}
             </button>
           </div>
-          <p className="body" style={{ margin: "10px 0 0" }}>{t.timeLeft(Math.floor(left / 60), String(left % 60).padStart(2, "0"))}</p>
+          <p className="body" style={{ margin: "10px 0 0" }}>
+            {left >= 3600 ? t.groupTimeLeft(Math.floor(left / 3600), Math.floor((left % 3600) / 60)) : t.timeLeft(Math.floor(left / 60), String(left % 60).padStart(2, "0"))}
+          </p>
         </>
       ) : (
         <p className="body">{t.expired}</p>
@@ -202,5 +220,49 @@ export function GroupTestButton({ slug, groupId, name }: { slug: string; groupId
       {msg?.ok && <span className="notice ok" style={{ display: "block", marginTop: 6 }}>{msg.ok}</span>}
       {msg?.error && <span className="notice error" style={{ display: "block", marginTop: 6 }}>{msg.error}</span>}
     </span>
+  );
+}
+
+/** Admins: "Add a Discord channel" → paste the channel's webhook URL. */
+export function AddDiscordGroupForm({ slug }: { slug: string }) {
+  const t = TEXT[useLocale()];
+  const [open, setOpen] = useState(false);
+  const [state, action, pending] = useActionState(addDiscordGroupAction.bind(null, slug), null);
+  const form = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    if (state?.ok) {
+      form.current?.reset();
+      setOpen(false);
+    }
+  }, [state]);
+
+  if (!open) {
+    return (
+      <button type="button" className="btn tiny primary" onClick={() => setOpen(true)}>
+        {t.addDiscord}
+      </button>
+    );
+  }
+  return (
+    <form ref={form} action={action} className="card" style={{ padding: 16, marginTop: 12, width: "100%" }}>
+      <p className="body" style={{ margin: "0 0 10px" }}>{t.discordSteps}</p>
+      <div className="field">
+        <label htmlFor="dg-url">{t.webhookUrl}</label>
+        <input id="dg-url" name="url" type="url" required autoComplete="off" placeholder="https://discord.com/api/webhooks/…" />
+      </div>
+      <div className="field">
+        <label htmlFor="dg-name">{t.groupName}</label>
+        <input id="dg-name" name="name" maxLength={100} />
+      </div>
+      {state?.error && <div className="notice error">{state.error}</div>}
+      <div className="form-actions">
+        <button type="button" className="btn tiny" onClick={() => setOpen(false)}>
+          {t.cancel}
+        </button>
+        <button className="btn tiny primary" disabled={pending}>
+          {pending ? t.adding : t.add}
+        </button>
+      </div>
+    </form>
   );
 }
