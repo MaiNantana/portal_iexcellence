@@ -34,6 +34,14 @@ jobs:
           if ($LASTEXITCODE -ge 8) { throw "robocopy failed ($LASTEXITCODE)" }
           exit 0
 
+      # Settings kept as GitHub secrets (environment "production") → the server's .env. See deploy/apply-env.ps1.
+      - name: Apply settings from secrets
+        shell: powershell
+        env:
+          HUB_ADMIN_URL: ${{ secrets.HUB_ADMIN_URL }}
+          HUB_ADMIN_KEY: ${{ secrets.HUB_ADMIN_KEY }}
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File "C:\Program Files\iisnode\www\portal\deploy\apply-env.ps1"
+
       # npm ci, prisma migrate deploy, build, restart the app pool, smoke test.
       - name: Install, migrate, build, restart
         shell: powershell
