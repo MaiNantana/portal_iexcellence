@@ -101,8 +101,10 @@ export default async function TenantLayout({ children, params }: { children: Rea
                 <ShieldCheck size={17} strokeWidth={1.75} aria-hidden="true" />
               </Link>
             )}
+            {/* On phones this goes to its own row under the logo (globals.css .toolgroup). */}
+            <div className="toolgroup">
             {orgs.length > 1 && (
-              <form action={switchOrg} style={{ display: "flex", gap: 4 }}>
+              <form action={switchOrg} className="orgswitch-form">
                 <select name="orgId" defaultValue={member.orgId} className="orgswitch" aria-label={t.pickOrg}>
                   {orgs.map(({ org }) => (
                     <option key={org.id} value={org.id}>{org.name}</option>
@@ -112,6 +114,7 @@ export default async function TenantLayout({ children, params }: { children: Rea
               </form>
             )}
             <LanguageSwitch />
+            </div>
             <div className="userchip">
               <b>{member.user.name ?? member.user.email}</b>
               <small>{isAdmin ? "Admin" : "Employee"}</small>

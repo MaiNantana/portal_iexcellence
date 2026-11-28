@@ -34,6 +34,8 @@ svg{flex:none}
 .topnav a:hover{color:var(--ink);background:#f3f1ed}
 .topnav a.sel{background:var(--soft);color:var(--accent)}
 .righttools{display:flex;gap:8px;align-items:center}
+.toolgroup{display:contents}
+.orgswitch-form{display:flex;gap:4px;min-width:0}
 .iconbtn{height:36px;min-width:36px;border:1px solid var(--line);background:#fff;border-radius:9px;color:var(--ink-2);display:grid;place-items:center;position:relative;padding:0 8px;transition:border-color .15s,color .15s,background .15s}
 .iconbtn:hover{border-color:var(--line-strong);background:#faf9f7;color:var(--ink)}
 .iconbtn.adminbtn{display:flex;gap:6px;padding:0 12px;font-size:13px;font-weight:500;white-space:nowrap}
@@ -261,6 +263,18 @@ dialog.confirm p{margin:0;font-size:15px;line-height:1.65;white-space:normal;fon
   body{padding-bottom:70px}
   .top-inner{height:56px;padding:0 16px;gap:8px}
   .brand h1{font-size:14px;max-width:170px}
+  /* Two-row header: logo + icon buttons, then company switch + language on a row of their own. */
+  .top-inner{height:auto;min-height:56px;flex-wrap:wrap;padding:8px 16px;row-gap:8px}
+  .brand{flex:1 1 0;min-width:0}
+  .righttools{display:contents}
+  .righttools>*{flex:none}
+  .toolgroup{display:flex;order:2;flex:1 0 100%;gap:8px;align-items:center;justify-content:flex-end}
+  .orgswitch-form{flex:1 1 auto}
+  .orgswitch-form .orgswitch{flex:1 1 auto;max-width:none;min-width:0}
+  /* Admin tabs wrap into pills instead of scrolling out of sight. */
+  .adminmenu{flex-wrap:wrap;gap:6px;border-bottom:0;overflow:visible}
+  .adminmenu a{padding:6px 11px;border:1px solid var(--line);border-radius:999px;margin:0;font-size:13px;background:#fff}
+  .adminmenu a.on{background:var(--soft);border-color:var(--accent)}
   .topnav{display:none}
   .wrap{padding:20px 16px 36px}
   .intro{padding-bottom:20px}.intro h2{font-size:24px}
