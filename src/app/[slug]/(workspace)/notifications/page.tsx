@@ -44,6 +44,7 @@ const TEXT = defineText({
     lineSoon: "กลุ่ม LINE ยังไม่เปิดให้ใช้งาน",
     telegramSoon: "กลุ่ม Telegram: เร็ว ๆ นี้ (รอผู้ให้บริการระบบแจ้งเตือน)",
     groupsGuide: "ขั้นตอนเชื่อมกลุ่ม ›",
+    summary: "ภาพรวมการเชื่อมต่อของบริษัท ›",
     noGroups: "ยังไม่มีกลุ่มที่เชื่อมไว้",
     groupLeft: "บอทออกจากกลุ่มแล้ว · เชิญ Iex.Notification กลับเข้ากลุ่ม",
     discordLeft: "Webhook ถูกลบใน Discord แล้ว · ลบแล้วเพิ่มใหม่",
@@ -91,6 +92,7 @@ const TEXT = defineText({
     lineSoon: "LINE groups are not available yet",
     telegramSoon: "Telegram groups: coming soon (waiting for the notification provider)",
     groupsGuide: "How to connect a group ›",
+    summary: "Company connection overview ›",
     noGroups: "No groups connected yet",
     groupLeft: "The bot left the group · invite Iex.Notification back",
     discordLeft: "The webhook was deleted in Discord · remove it and add a new one",
@@ -239,6 +241,9 @@ export default async function NotificationsPage({
             {t.groupsLead}{" "}
             <Link href={withLocale(locale, orgPath(slug, "/notifications/guide#groups"))} className="inline-link">
               {t.groupsGuide}
+            </Link>{" "}
+            · <Link href={withLocale(locale, orgPath(slug, "/admin?tab=notify"))} className="inline-link">
+              {t.summary}
             </Link>
           </p>
           <div className="workrow" style={{ flexWrap: "wrap" }}>

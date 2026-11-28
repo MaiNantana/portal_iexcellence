@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { NotifySummary } from "./NotifySummary";
 import { listHrDatabases } from "@/app/hr-actions";
 import { HrConnectForm } from "@/components/HrConnectForm";
 import { HR_DEFAULT_ORIGIN } from "@/lib/hr";
@@ -28,7 +29,7 @@ import { getLocale } from "@/i18n/server";
 
 const TEXT = defineText({
   th: {
-    tabs: { news: "ข่าวสาร", services: "บริการ", links: "ลิงก์บริษัท", connections: "เชื่อมต่อโปรแกรม", members: "สมาชิก", departments: "แผนก", access: "การเข้าร่วม" },
+    tabs: { news: "ข่าวสาร", services: "บริการ", links: "ลิงก์บริษัท", connections: "เชื่อมต่อโปรแกรม", notify: "การแจ้งเตือน", members: "สมาชิก", departments: "แผนก", access: "การเข้าร่วม" },
     title: (org: string) => `จัดการบริษัท · ${org}`,
     plan: (plan: string) => `แพ็กเกจ ${plan}`,
     delete: "ลบ",
@@ -178,7 +179,7 @@ const TEXT = defineText({
     revokeConfirm: (email: string) => `ยกเลิกคำเชิญของ ${email}?`,
   },
   en: {
-    tabs: { news: "News", services: "Services", links: "Company links", connections: "Connected apps", members: "Members", departments: "Departments", access: "Joining" },
+    tabs: { news: "News", services: "Services", links: "Company links", connections: "Connected apps", notify: "Notifications", members: "Members", departments: "Departments", access: "Joining" },
     title: (org: string) => `Manage company · ${org}`,
     plan: (plan: string) => `${plan} plan`,
     delete: "Delete",
@@ -323,7 +324,7 @@ const TEXT = defineText({
 });
 
 type T = (typeof TEXT)["th"];
-const TABS = ["news", "services", "links", "connections", "members", "departments", "access"] as const;
+const TABS = ["news", "services", "links", "connections", "notify", "members", "departments", "access"] as const;
 const JOIN_MODES = ["OFF", "APPROVAL", "OPEN"] as const;
 
 export default async function AdminPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ tab?: string; edit?: string }> }) {
@@ -356,6 +357,7 @@ export default async function AdminPage({ params, searchParams }: { params: Prom
       {tab === "services" && <ServicesTab {...ctx} admin={admin} />}
       {tab === "links" && <LinksTab {...ctx} orgId={admin.orgId} />}
       {tab === "connections" && <ConnectionsTab {...ctx} org={admin.org} />}
+      {tab === "notify" && <NotifySummary org={{ id: admin.orgId, slug: admin.org.slug, name: admin.org.name }} base={base} locale={locale} />}
       {tab === "members" && <MembersTab {...ctx} orgId={admin.orgId} selfId={admin.id} hrEnabled={Boolean(admin.org.hrEnabled && admin.org.hrBaseUrl)} />}
       {tab === "departments" && <DepartmentsTab {...ctx} orgId={admin.orgId} editKey={edit} />}
       {tab === "access" && <AccessTab {...ctx} org={admin.org} />}
