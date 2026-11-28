@@ -99,10 +99,51 @@ export function openLinksInExternalBrowser(text: string) {
 }
 
 /**
- * API #2: send a text to Portal users (1–1000 per call; larger lists are split here).
- * The Hub picks each person's channel. Retries must reuse the same idempotencyKey.
+ * A LINE card from one of the Hub's templates ("ส่งการ์ด LINE ตามโปรแกรมและแม่แบบ", 2026-11-25):
+ * hr/leave_pending, hr/attendance_success, task/task_assigned. `data` holds the template's fields plus
+ * optional `title` and `action: { url, label? }`. Telegram gets the same content as text from the Hub.
  */
-export async function sendHubEvent(org: { slug: string; name: string }, userIds: string[], text: string, idempotencyKey: string, ref?: string) {
+export type HubCard = { app: string; template: string; data: Record<string, unknown> };
+
+function cardData(data: Record<string, unknown>) {
+  const action = data.action as { url?: unknown; label?: unknown } | undefined;
+  if (!action || typeof action.url !== "string") return data;
+  return { ...data, action: { ...action, url: openLinksInExternalBrowser(action.url) } };
+}
+
+/**
+ * API #2: send to Portal users (1–1000 per call; larger lists are split here).
+ * The Hub picks each person's channel. Retries must reuse the same idempotencyKey.
+ * With `card` the Hub renders that template; `text` is still sent as plain text if the Hub refuses the
+ * card (422 unknown_template / 400 validation), so a new or mistyped template never loses the message.
+ */
+export async function sendHubEvent(
+  org: { slug: string; name: string },
+  userIds: string[],
+  text: string,
+  idempotencyKey: string,
+  ref?: string,
+  card?: HubCard,
+): Promise<HubRecipient[]> {
+  if (card) {
+    try {
+      return await sendHubEventOnce(org, userIds, idempotencyKey, ref, { app: card.app, template: card.template, data: cardData(card.data) });
+    } catch (err) {
+      if (!(err instanceof HubError && (err.status === 422 || err.status === 400))) throw err;
+      console.warn(`[hub] card ${card.app}/${card.template} refused (${err.code}: ${err.message}); sending plain text`);
+      return sendHubEventOnce(org, userIds, `${idempotencyKey}:text`, ref, { data: { text: openLinksInExternalBrowser(text).slice(0, 4900) } });
+    }
+  }
+  return sendHubEventOnce(org, userIds, idempotencyKey, ref, { data: { text: openLinksInExternalBrowser(text).slice(0, 4900) } });
+}
+
+async function sendHubEventOnce(
+  org: { slug: string; name: string },
+  userIds: string[],
+  idempotencyKey: string,
+  ref: string | undefined,
+  content: { app?: string; template?: string; data: Record<string, unknown> },
+) {
   const recipients: HubRecipient[] = [];
   for (let i = 0; i < userIds.length; i += 1000) {
     const chunk = userIds.slice(i, i + 1000);
@@ -114,7 +155,7 @@ export async function sendHubEvent(org: { slug: string; name: string }, userIds:
         companyName: org.name.slice(0, 100),
         event: "common.announcement",
         to: { users: chunk },
-        data: { text: openLinksInExternalBrowser(text).slice(0, 4900) },
+        ...content,
         ...(ref ? { ref: ref.slice(0, 128) } : {}),
       },
       // Telegram sends ~25 messages/second, so a large list can take a while.

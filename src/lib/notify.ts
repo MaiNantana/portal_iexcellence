@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { discordConfigured, sendDiscordDm } from "@/lib/discord";
-import { hubConfigured, sendHubEvent, type HubRecipient } from "@/lib/hub";
+import { hubConfigured, sendHubEvent, type HubCard, type HubRecipient } from "@/lib/hub";
 
 // One notification fanned out to every channel the person has linked:
 // LINE / Telegram through the Notification Hub (the Hub picks the primary one), Discord through the Portal's bot.
@@ -13,6 +13,8 @@ export type NotifyInput = {
   /** Company slug. Without it each person gets it once, under the company they used last. */
   org?: string;
   text: string;
+  /** Optional LINE card (Hub template). `text` stays the plain version for Discord and as a fallback. */
+  card?: HubCard;
   /** Same key on a retry = no duplicate messages. */
   idempotencyKey: string;
   ref?: string;
@@ -58,7 +60,7 @@ export async function notify(input: NotifyInput): Promise<NotifyResult[]> {
       continue;
     }
     try {
-      const sent = await sendHubEvent(org, group.map((t) => t.user.id), input.text, `${input.idempotencyKey}:${org.slug}`, input.ref);
+      const sent = await sendHubEvent(org, group.map((t) => t.user.id), input.text, `${input.idempotencyKey}:${org.slug}`, input.ref, input.card);
       const byUser = new Map(sent.map((r) => [r.user, r]));
       for (const t of group) {
         const r = byUser.get(t.user.id);
