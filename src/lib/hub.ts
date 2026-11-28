@@ -13,6 +13,15 @@ export type HubUserChannels = {
   channels: Partial<Record<string, { status: HubChannelStatus; linkedAt?: string }>>;
 };
 
+/**
+ * A company's own LINE OA (lib/line-oa.ts), used for GROUPS only: a group has no email to link with, so the
+ * OA's token is what ties a company's groups to the Hub. When a company has one, every group push carries it
+ * as `line` and the Hub pushes through that OA instead of Iex.Notification. Companies without one send exactly
+ * what they sent before (no `line` field). Personal notifications (/v1/events) are unchanged: people still
+ * link by email with Iex.Notification. See docs/HUB-LINE-OA-REQUEST.md.
+ */
+export type HubLineCredentials = { channelId: string; accessToken: string };
+
 export type HubLinkKey = { key: string; liffUrl?: string; telegramUrl?: string; expiresAt: string };
 export type HubRecipient = { user: string; status: HubRecipientStatus; channel?: HubChannel; error?: string };
 
@@ -212,11 +221,12 @@ export async function unlinkHubGroup(orgSlug: string, groupId: string) {
 }
 
 /** One text into one LINE group. The caller must have checked the group is this company's. */
-export async function pushHubGroup(groupId: string, text: string): Promise<"sent" | "left"> {
+export async function pushHubGroup(groupId: string, text: string, line?: HubLineCredentials | null): Promise<"sent" | "left"> {
   try {
     const { results } = await hubAdmin<{ results: { groupId: string; ok: boolean }[] }>("POST", "/push-group", {
       groupId,
       text: openLinksInExternalBrowser(text).slice(0, 5000),
+      ...(line ? { line } : {}),
     });
     if (results?.some((r) => r.ok)) return "sent";
     throw new HubError(502, "push_failed", "LINE did not accept the message");
@@ -224,4 +234,25 @@ export async function pushHubGroup(groupId: string, text: string): Promise<"sent
     if (err instanceof HubError && err.code === "no_active_group") return "left";
     throw err;
   }
+}
+
+// ---- A company's own LINE OA (docs/HUB-LINE-OA-REQUEST.md; not live in the Hub yet) ----
+
+/** Hands the company's OA to the Hub (it needs the secret to verify that OA's webhook). Replaces any earlier one. */
+export async function putHubLineChannel(
+  org: { slug: string; name: string },
+  creds: { channelId: string; channelSecret: string; accessToken: string },
+): Promise<{ webhookUrl?: string }> {
+  const departmentId = await companyDepartment(org);
+  const data = await hubAdmin<{ webhookUrl?: string; webhook_url?: string }>("PUT", "/line-channel", {
+    company: company(org.slug),
+    departmentId,
+    ...creds,
+  });
+  return { webhookUrl: data.webhookUrl ?? data.webhook_url };
+}
+
+/** The company goes back to Iex.Notification. */
+export async function deleteHubLineChannel(orgSlug: string) {
+  await hubAdmin("DELETE", `/line-channel?company=${encodeURIComponent(company(orgSlug))}`);
 }

@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { choosePrimary, unlinkChannel, unlinkGroup } from "@/app/notify-actions";
+import { choosePrimary, removeLineChannelAction, resyncLineChannelAction, unlinkChannel, unlinkGroup } from "@/app/notify-actions";
 import { ConfirmButton } from "@/components/ConfirmButton";
-import { AddDiscordGroupForm, ConnectChannelButton, ConnectGroupButton, GroupTestButton, TestNotificationButton } from "@/components/NotifyConnect";
+import { AddDiscordGroupForm, ConnectChannelButton, ConnectGroupButton, GroupTestButton, LineOaForm, TestNotificationButton } from "@/components/NotifyConnect";
 import { orgPath, requireMember } from "@/lib/context";
 import { db } from "@/lib/db";
 import { discordConfigured } from "@/lib/discord";
 import { companyGroups, type NotifyGroup } from "@/lib/groups";
+import { lineChannelSummary } from "@/lib/line-oa";
 import { HUB_CHANNELS, hubConfigured, hubGroupsEnabled, hubUserChannels, type HubUserChannels } from "@/lib/hub";
 import { defineText, withLocale } from "@/i18n";
 import { getLocale } from "@/i18n/server";
@@ -48,6 +49,17 @@ const TEXT = defineText({
     discordLeft: "Webhook ถูกลบใน Discord แล้ว · ลบแล้วเพิ่มใหม่",
     unlinkGroupConfirm: (name: string) => `เลิกส่งแจ้งเตือนเข้า "${name}"?`,
     quota: "LINE นับโควตาข้อความตามจำนวนสมาชิกในกลุ่ม ส่ง 1 ครั้งเข้ากลุ่ม 20 คน = 20 ข้อความ · Discord ไม่จำกัด",
+    oa: "LINE OA ที่ใช้ส่งเข้ากลุ่ม",
+    oaDefault: "Iex.Notification (ค่าเริ่มต้น) · ใช้ LINE OA ของบริษัทเองได้ ข้อความในกลุ่มจะมาจาก OA ของบริษัท และนับโควตาในแพ็กเกจของบริษัท",
+    oaOwn: (name: string, id: string) => `${name} · Channel ID ${id}`,
+    oaSynced: "ส่งให้ระบบแจ้งเตือน (Hub) แล้ว",
+    oaNotSynced: (code: string) =>
+      code === "hub_not_ready" ? "บันทึกแล้ว · ระบบแจ้งเตือน (Hub) ยังไม่รองรับ OA ของบริษัท จะใช้ได้เมื่อ Hub พร้อม" : `บันทึกแล้ว แต่ยังส่งให้ Hub ไม่สำเร็จ (${code})`,
+    oaWebhook: "Webhook URL ของ OA (ตั้งให้อัตโนมัติแล้ว)",
+    oaWebhookFail: "ตั้ง Webhook URL ให้ OA อัตโนมัติไม่สำเร็จ · ใส่ URL นี้เองใน LINE Developers › Messaging API › Webhook URL",
+    oaResync: "ส่งให้ Hub อีกครั้ง",
+    oaRemove: "เลิกใช้ OA นี้",
+    oaRemoveConfirm: "กลับไปใช้ Iex.Notification? กลุ่มที่เชื่อมผ่าน OA ของบริษัทจะไม่ได้รับแจ้งเตือนจนกว่าจะเชื่อมใหม่",
   },
   en: {
     discord: {
@@ -84,6 +96,17 @@ const TEXT = defineText({
     discordLeft: "The webhook was deleted in Discord · remove it and add a new one",
     unlinkGroupConfirm: (name: string) => `Stop notifications to "${name}"?`,
     quota: "LINE counts messages per group member: one message to a 20-person group = 20 messages. Discord has no quota.",
+    oa: "LINE OA for groups",
+    oaDefault: "Iex.Notification (default) · You can use your company's own LINE OA: group messages then come from your OA and count against your own LINE plan.",
+    oaOwn: (name: string, id: string) => `${name} · Channel ID ${id}`,
+    oaSynced: "Handed to the notification service (Hub)",
+    oaNotSynced: (code: string) =>
+      code === "hub_not_ready" ? "Saved · the notification service (Hub) doesn't support company OAs yet; it will work once the Hub does" : `Saved, but not handed to the Hub yet (${code})`,
+    oaWebhook: "The OA's webhook URL (set for you)",
+    oaWebhookFail: "Couldn't set the OA's webhook URL automatically · enter this URL in LINE Developers › Messaging API › Webhook URL",
+    oaResync: "Send to the Hub again",
+    oaRemove: "Stop using this OA",
+    oaRemoveConfirm: "Go back to Iex.Notification? Groups connected through your OA stop receiving notifications until connected again.",
   },
 });
 
@@ -122,6 +145,7 @@ export default async function NotificationsPage({
   let groups: NotifyGroup[] = [];
   let groupsError = false;
   if (isAdmin) ({ groups, hubError: groupsError } = await companyGroups(member.org));
+  const oa = isAdmin ? await lineChannelSummary(member.org.id) : null;
 
   return (
     <article className="card panel article" style={{ maxWidth: 640 }}>
@@ -217,6 +241,31 @@ export default async function NotificationsPage({
               {t.groupsGuide}
             </Link>
           </p>
+          <div className="workrow" style={{ flexWrap: "wrap" }}>
+            <span className="wtitle">
+              <b>{t.oa}</b>
+              <small>{oa ? t.oaOwn(oa.botName ?? oa.basicId ?? "LINE OA", oa.channelId) : t.oaDefault}</small>
+              {oa && <small>{oa.hubSyncedAt ? t.oaSynced : t.oaNotSynced(oa.hubError ?? "hub_off")}</small>}
+            </span>
+            {oa && !oa.hubSyncedAt && lineOn && (
+              <form action={resyncLineChannelAction.bind(null, slug)}>
+                <button className="btn tiny">{t.oaResync}</button>
+              </form>
+            )}
+            {oa && (
+              <form action={removeLineChannelAction.bind(null, slug)}>
+                <ConfirmButton className="btn tiny" message={t.oaRemoveConfirm}>
+                  {t.oaRemove}
+                </ConfirmButton>
+              </form>
+            )}
+            <LineOaForm slug={slug} replacing={Boolean(oa)} />
+          </div>
+          {oa?.hubWebhookUrl && (
+            <p className="body" style={{ fontSize: 13 }}>
+              {oa.hubError === "webhook_not_set" ? t.oaWebhookFail : t.oaWebhook}: <code>{oa.hubWebhookUrl}</code>
+            </p>
+          )}
           {groupsError && <div className="notice error">{t.unreachable}</div>}
           {groups.length === 0 && <p className="body">{t.noGroups}</p>}
           {groups.map((g) => (
@@ -234,7 +283,7 @@ export default async function NotificationsPage({
             </div>
           ))}
           <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>
-            {lineOn ? <ConnectGroupButton slug={slug} /> : <span className="chip warn">{t.lineSoon}</span>}
+            {lineOn ? <ConnectGroupButton slug={slug} oaName={oa?.botName ?? undefined} /> : <span className="chip warn">{t.lineSoon}</span>}
             <AddDiscordGroupForm slug={slug} />
           </div>
           <p className="body" style={{ marginTop: 12, fontSize: 13 }}>{t.telegramSoon}</p>

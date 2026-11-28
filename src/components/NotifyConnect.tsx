@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState, useTransition } from "react";
-import { addDiscordGroupAction, requestGroupLinkKey, requestLinkKey, sendGroupTest, sendTestNotification, type GroupKeyState, type LinkKeyState } from "@/app/notify-actions";
+import { addDiscordGroupAction, requestGroupLinkKey, saveLineChannelAction, requestLinkKey, sendGroupTest, sendTestNotification, type GroupKeyState, type LinkKeyState } from "@/app/notify-actions";
 import { defineText } from "@/i18n";
 import { useLocale } from "@/i18n/client";
 
@@ -25,7 +25,17 @@ const TEXT = defineText({
     sending: "กำลังส่ง...",
     test: "ส่งข้อความทดสอบถึงฉัน",
     connectGroup: "+ เชื่อมกลุ่ม LINE",
-    groupSteps: "1. เชิญ LINE Official Account \"Iex.Notification\" เข้ากลุ่ม LINE\n2. พิมพ์คำสั่งนี้ในกลุ่ม (ใช้ได้ 1 กลุ่ม)",
+    groupSteps: (oa: string) => `1. เชิญ LINE Official Account "${oa}" เข้ากลุ่ม LINE\n2. พิมพ์คำสั่งนี้ในกลุ่ม (ใช้ได้ 1 กลุ่ม)`,
+    useOwnOa: "+ ใช้ LINE OA ของบริษัทเอง",
+    replaceOa: "เปลี่ยน token",
+    oaSteps:
+      "ใน LINE Developers (developers.line.biz) › Provider › Messaging API channel ของ OA บริษัท:\n• Channel ID และ Channel secret: แท็บ Basic settings\n• Channel access token (long-lived): แท็บ Messaging API › Issue\n• ใน LINE Official Account Manager เปิด \"Allow account to join groups and multi-person chats\" และเปิด Use webhook",
+    channelId: "Channel ID",
+    channelSecret: "Channel secret",
+    accessToken: "Channel access token (long-lived)",
+    secretNote: "เก็บแบบเข้ารหัส และส่งต่อให้ระบบแจ้งเตือน (Hub) เท่านั้น ไม่แสดงอีก",
+    save: "ตรวจกับ LINE แล้วบันทึก",
+    saving: "กำลังตรวจ...",
     groupTimeLeft: (h: number, m: number) => `ใช้ได้อีก ${h} ชม. ${m} นาที`,
     addDiscord: "+ เพิ่มช่อง Discord",
     discordSteps: "ใน Discord: คลิกขวาที่ช่อง › Edit Channel › Integrations › Webhooks › New Webhook › Copy Webhook URL แล้ววางด้านล่าง",
@@ -56,7 +66,17 @@ const TEXT = defineText({
     sending: "Sending...",
     test: "Send me a test message",
     connectGroup: "+ Connect a LINE group",
-    groupSteps: "1. Invite the LINE Official Account \"Iex.Notification\" into the LINE group\n2. Send this command in the group (works for one group)",
+    groupSteps: (oa: string) => `1. Invite the LINE Official Account "${oa}" into the LINE group\n2. Send this command in the group (works for one group)`,
+    useOwnOa: "+ Use our own LINE OA",
+    replaceOa: "Replace token",
+    oaSteps:
+      "In LINE Developers (developers.line.biz) › Provider › your OA's Messaging API channel:\n• Channel ID and Channel secret: Basic settings tab\n• Channel access token (long-lived): Messaging API tab › Issue\n• In LINE Official Account Manager, turn on \"Allow account to join groups and multi-person chats\" and Use webhook",
+    channelId: "Channel ID",
+    channelSecret: "Channel secret",
+    accessToken: "Channel access token (long-lived)",
+    secretNote: "Stored encrypted and passed only to the notification service (Hub). It is never shown again.",
+    save: "Check with LINE and save",
+    saving: "Checking...",
     groupTimeLeft: (h: number, m: number) => `Valid for ${h} h ${m} min`,
     addDiscord: "+ Add a Discord channel",
     discordSteps: "In Discord: right-click the channel › Edit Channel › Integrations › Webhooks › New Webhook › Copy Webhook URL, then paste it below.",
@@ -147,7 +167,7 @@ export function TestNotificationButton({ slug }: { slug: string }) {
 }
 
 /** Admins: "Connect a LINE group" → the `/register <code>` command to send in the group (24 hours). */
-export function ConnectGroupButton({ slug }: { slug: string }) {
+export function ConnectGroupButton({ slug, oaName = "Iex.Notification" }: { slug: string; oaName?: string }) {
   const t = TEXT[useLocale()];
   const [state, setState] = useState<GroupKeyState | null>(null);
   const [pending, start] = useTransition();
@@ -178,7 +198,7 @@ export function ConnectGroupButton({ slug }: { slug: string }) {
     <div className="card" style={{ padding: 16, marginTop: 12, width: "100%" }}>
       {left > 0 ? (
         <>
-          <p className="body" style={{ margin: "0 0 10px", whiteSpace: "pre-line" }}>{t.groupSteps}</p>
+          <p className="body" style={{ margin: "0 0 10px", whiteSpace: "pre-line" }}>{t.groupSteps(oaName)}</p>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <code style={{ fontSize: 20, fontWeight: 700, padding: "8px 14px", background: "var(--soft)", borderRadius: 8, letterSpacing: 1 }}>{state.command}</code>
             <button
@@ -261,6 +281,55 @@ export function AddDiscordGroupForm({ slug }: { slug: string }) {
         </button>
         <button className="btn tiny primary" disabled={pending}>
           {pending ? t.adding : t.add}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** A company admin enters the company's own LINE OA (used for groups instead of Iex.Notification). */
+export function LineOaForm({ slug, replacing = false }: { slug: string; replacing?: boolean }) {
+  const t = TEXT[useLocale()];
+  const [open, setOpen] = useState(false);
+  const [state, action, pending] = useActionState(saveLineChannelAction.bind(null, slug), null);
+  const form = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    if (state?.ok) {
+      form.current?.reset();
+      setOpen(false);
+    }
+  }, [state]);
+
+  if (!open) {
+    return (
+      <button type="button" className={`btn tiny${replacing ? "" : " primary"}`} onClick={() => setOpen(true)}>
+        {replacing ? t.replaceOa : t.useOwnOa}
+      </button>
+    );
+  }
+  return (
+    <form ref={form} action={action} className="card" style={{ padding: 16, marginTop: 12, width: "100%" }}>
+      <p className="body" style={{ margin: "0 0 10px", whiteSpace: "pre-line" }}>{t.oaSteps}</p>
+      <div className="field">
+        <label htmlFor="oa-id">{t.channelId}</label>
+        <input id="oa-id" name="channelId" required inputMode="numeric" autoComplete="off" maxLength={20} />
+      </div>
+      <div className="field">
+        <label htmlFor="oa-secret">{t.channelSecret}</label>
+        <input id="oa-secret" name="channelSecret" type="password" required autoComplete="off" maxLength={64} />
+      </div>
+      <div className="field">
+        <label htmlFor="oa-token">{t.accessToken}</label>
+        <input id="oa-token" name="accessToken" type="password" required autoComplete="off" maxLength={1000} />
+      </div>
+      <p className="body" style={{ margin: "0 0 10px", fontSize: 13 }}>{t.secretNote}</p>
+      {state?.error && <div className="notice error">{state.error}</div>}
+      <div className="form-actions">
+        <button type="button" className="btn tiny" onClick={() => setOpen(false)}>
+          {t.cancel}
+        </button>
+        <button className="btn tiny primary" disabled={pending}>
+          {pending ? t.saving : t.save}
         </button>
       </div>
     </form>

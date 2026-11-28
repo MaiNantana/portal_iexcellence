@@ -6,6 +6,7 @@
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { hubGroups, hubGroupsEnabled, pushHubGroup } from "@/lib/hub";
+import { lineCredentials } from "@/lib/line-oa";
 import { decryptSecret, encryptSecret } from "@/lib/secrets";
 
 export type GroupChannel = "line" | "telegram" | "discord";
@@ -129,6 +130,8 @@ async function sendLineGroups(orgSlug: string, ids: string[], text: string, idem
   if (!hubGroupsEnabled()) return ids.map((g) => ({ group: g, status: "not_found" as const }));
   // The Hub's admin key can post to any company's group, so only this company's groups get through.
   const own = new Map((await hubGroups(orgSlug)).map((g) => [g.groupId, g]));
+  // A company with its own LINE OA: the token goes with every push (groups have no email to link with).
+  const creds = await lineCredentials(orgSlug);
   const out: GroupSendResult[] = [];
   for (const gid of ids) {
     const g = own.get(gid);
@@ -141,7 +144,7 @@ async function sendLineGroups(orgSlug: string, ids: string[], text: string, idem
       continue;
     }
     try {
-      const status = await pushHubGroup(gid, text);
+      const status = await pushHubGroup(gid, text, creds);
       if (status === "left") await unclaim(idempotencyKey, gid);
       out.push({ group: gid, status, channel: "line" });
     } catch (err) {

@@ -7,6 +7,7 @@ import { realUser, requireMember } from "@/lib/context";
 import { db } from "@/lib/db";
 import { addDiscordGroup, DiscordWebhookError, isDiscordGroupId, removeDiscordGroup, sendToGroups } from "@/lib/groups";
 import { createGroupCode, createLinkKey, deactivateHubUser, HubError, hubGroupsEnabled, setHubPrimary, unlinkHubGroup, type HubChannel } from "@/lib/hub";
+import { LineOaError, removeLineChannel, resyncLineChannel, saveLineChannel } from "@/lib/line-oa";
 import { notify } from "@/lib/notify";
 import { defineText } from "@/i18n";
 import { getLocale } from "@/i18n/server";
@@ -35,6 +36,12 @@ const TEXT = defineText({
       duplicate: "Webhook นี้เพิ่มไว้แล้ว",
       unreachable: "ติดต่อ Discord ไม่ได้ ลองใหม่อีกครั้ง",
     },
+    lineOa: {
+      invalid: "ข้อมูลไม่ครบหรือรูปแบบไม่ถูกต้อง: Channel ID เป็นตัวเลข, Channel secret 32 ตัวอักษร, Channel access token (long-lived)",
+      bad_token: "LINE ไม่รับ Channel access token นี้ (หมดอายุหรือถูกออกใหม่แล้ว) ออก token ใหม่ใน LINE Developers",
+      channel_mismatch: "Channel access token นี้ไม่ใช่ของ Channel ID ที่กรอก",
+      unreachable: "ติดต่อ LINE ไม่ได้ ลองใหม่อีกครั้ง",
+    },
   },
   en: {
     badChannel: "Unknown channel.",
@@ -56,6 +63,12 @@ const TEXT = defineText({
       not_found: "Discord doesn't know this webhook (it may have been deleted).",
       duplicate: "This webhook is already added.",
       unreachable: "Can't reach Discord. Please try again.",
+    },
+    lineOa: {
+      invalid: "Missing or malformed: Channel ID is numeric, Channel secret is 32 characters, plus a long-lived Channel access token.",
+      bad_token: "LINE rejected this Channel access token (expired or reissued). Issue a new one in LINE Developers.",
+      channel_mismatch: "This Channel access token belongs to a different Channel ID.",
+      unreachable: "Can't reach LINE. Please try again.",
     },
   },
 });
@@ -191,4 +204,37 @@ export async function sendGroupTest(slug: string, groupId: string, name: string)
     console.error("[notify] group test failed:", err);
     return { error: t.failed };
   }
+}
+
+/** "Use our own LINE OA for groups": verified with LINE, stored encrypted, then handed to the Hub. */
+export async function saveLineChannelAction(slug: string, _prev: { error?: string; ok?: boolean } | null, form: FormData): Promise<{ error?: string; ok?: boolean }> {
+  const { member, t, error } = await requireGroupAdmin(slug);
+  if (error) return { error };
+  try {
+    await saveLineChannel(
+      member.org,
+      { channelId: String(form.get("channelId") ?? ""), channelSecret: String(form.get("channelSecret") ?? ""), accessToken: String(form.get("accessToken") ?? "") },
+      member.user.email,
+    );
+  } catch (err) {
+    if (err instanceof LineOaError) return { error: t.lineOa[err.code] };
+    console.error("[notify] save LINE OA failed:", err);
+    return { error: t.failed };
+  }
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
+
+export async function resyncLineChannelAction(slug: string) {
+  const { member, error } = await requireGroupAdmin(slug);
+  if (error) return;
+  await resyncLineChannel(member.org).catch((err) => console.error("[notify] LINE OA resync failed:", err));
+  revalidatePath("/", "layout");
+}
+
+export async function removeLineChannelAction(slug: string) {
+  const { member, error } = await requireGroupAdmin(slug);
+  if (error) return;
+  await removeLineChannel(member.org).catch((err) => console.error("[notify] remove LINE OA failed:", err));
+  revalidatePath("/", "layout");
 }

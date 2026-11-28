@@ -65,6 +65,7 @@ model Org {
   services      Service[]
   departments   Department[]
   discordGroups DiscordGroup[]
+  lineChannel   LineChannel?
 
   @@map("orgs")
 }
@@ -369,4 +370,31 @@ model DiscordGroup {
 
   @@unique([orgId, webhookId])
   @@map("discord_groups")
+}
+
+/// A company's own LINE Official Account (Messaging API channel). Kept here AND sent to the Notification Hub:
+/// the Hub needs the secret to check its webhook, and Portal passes the token along with every LINE send.
+model LineChannel {
+  id               String    @id @default(cuid())
+  orgId            String    @unique
+  channelId        String
+  /// AES-GCM encrypted (lib/secrets.ts).
+  channelSecretEnc String    @db.Text
+  accessTokenEnc   String    @db.Text
+  /// From LINE's bot info when saved: the OA's display name, @basic id and bot user id.
+  botName          String?
+  basicId          String?
+  botUserId        String?
+  /// Last time the Hub accepted these credentials; null = not handed to the Hub yet.
+  hubSyncedAt      DateTime?
+  hubError         String?
+  /// The Hub's webhook URL for this OA (Portal also sets it on the OA through LINE's API).
+  hubWebhookUrl    String?   @db.Text
+  createdByEmail   String?
+  updatedAt        DateTime  @updatedAt
+  createdAt        DateTime  @default(now())
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@map("line_channels")
 }
